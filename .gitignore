@@ -1,1 +1,59 @@
+# OS
 .DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode/
+.idea/
+*.iml
+*.swp
+*.vscode
+
+# Go
+vendor/
+/bin/
+/dist/
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.a
+
+# Node.js / TypeScript
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Build outputs
+*.log
+*.tmp
+
+# Certificates & Keys
+*.pem
+*.key
+*.cert
+*.crt
+
+
+cache/
+
+# Misc
+.DS_Store
+.vscode-settings.json
+*.bak
+.pansou-dev.pid
+.pansou-dev-bin
