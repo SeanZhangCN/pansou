@@ -55,6 +55,7 @@ import (
 	_ "pansou/plugin/jsnoteclub"
 	_ "pansou/plugin/jutoushe"
 	_ "pansou/plugin/kkmao"
+	_ "pansou/plugin/kkv"
 	_ "pansou/plugin/labi"
 	_ "pansou/plugin/leijing"
 	_ "pansou/plugin/libvio"
@@ -73,6 +74,7 @@ import (
 	_ "pansou/plugin/panwiki"
 	_ "pansou/plugin/panyq"
 	_ "pansou/plugin/pianku"
+	_ "pansou/plugin/qingying"
 	_ "pansou/plugin/qqpd"
 	_ "pansou/plugin/quark4k"
 	_ "pansou/plugin/quarksoo"
@@ -100,6 +102,7 @@ import (
 	_ "pansou/plugin/yuhuage"
 	_ "pansou/plugin/yunsou"
 	_ "pansou/plugin/zhizhen"
+	_ "pansou/plugin/zxzj"
 )
 
 // 全局缓存写入管理器
