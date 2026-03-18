@@ -57,3 +57,6 @@ cache/
 *.bak
 .pansou-dev.pid
 .pansou-dev-bin
+
+# AI
+.github/**/*.md
