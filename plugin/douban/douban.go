@@ -3,11 +3,14 @@ package douban
 import (
 	"compress/gzip"
 	"compress/zlib"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"math/rand"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -21,6 +24,7 @@ import (
 	"pansou/service"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/net/proxy"
 )
 
 const (
@@ -152,11 +156,15 @@ func (p *DoubanPlugin) Initialize() error {
 		return nil
 	}
 
+	clientTimeout := 10 * time.Second
+	proxyURL := ""
 	if config.AppConfig != nil {
-		p.client.Timeout = config.AppConfig.DoubanHTTPTimeout
+		clientTimeout = config.AppConfig.DoubanHTTPTimeout
+		proxyURL = config.AppConfig.ProxyURL
 		p.interval = config.AppConfig.DoubanFetchInterval
 		p.cacheTTL = config.AppConfig.DoubanCacheTTL
 	}
+	p.client = newDoubanHTTPClient(clientTimeout, proxyURL)
 
 	go func() {
 		if err := p.refreshAllRankings(); err != nil {
@@ -168,6 +176,50 @@ func (p *DoubanPlugin) Initialize() error {
 	p.initialized = true
 	fmt.Printf("[Douban] 预抓取任务已启动，周期: %v\n", p.interval)
 	return nil
+}
+
+func newDoubanHTTPClient(timeout time.Duration, proxyURL string) *http.Client {
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+
+	transport := &http.Transport{
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   20,
+		MaxConnsPerHost:       100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+	}
+
+	if proxyURL != "" {
+		parsedProxyURL, err := url.Parse(proxyURL)
+		if err != nil {
+			fmt.Printf("[Douban] 代理地址解析失败，使用直连: %v\n", err)
+		} else if parsedProxyURL.Scheme == "socks5" {
+			dialer, err := proxy.FromURL(parsedProxyURL, proxy.Direct)
+			if err != nil {
+				fmt.Printf("[Douban] SOCKS5代理初始化失败，使用直连: %v\n", err)
+			} else {
+				transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+					return dialer.Dial(network, addr)
+				}
+				fmt.Printf("[Douban] 使用SOCKS5代理: %s\n", proxyURL)
+			}
+		} else {
+			transport.Proxy = http.ProxyURL(parsedProxyURL)
+			fmt.Printf("[Douban] 使用HTTP(S)代理: %s\n", proxyURL)
+		}
+	}
+
+	return &http.Client{
+		Transport: transport,
+		Timeout:   timeout,
+	}
 }
 
 func (p *DoubanPlugin) RegisterWebRoutes(router *gin.RouterGroup) {

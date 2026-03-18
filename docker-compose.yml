@@ -21,7 +21,7 @@ services:
       # - AUTH_TOKEN_EXPIRY=24
       # - AUTH_JWT_SECRET=your-secret-key-here
       # 如果需要代理，取消下面的注释并设置代理地址
-      # - PROXY=socks5://proxy:7897
+      - PROXY=http://host.docker.internal:7897
     volumes:
       - pansou-cache:/app/cache
     networks:
@@ -43,7 +43,7 @@ services:
     depends_on:
       - pansou
     ports:
-      - "80:80"
+      - "8090:80"
     networks:
       - pansou-network
 
