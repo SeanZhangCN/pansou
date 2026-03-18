@@ -61,6 +61,17 @@ extract_compose_env() {
 load_default_env() {
   export GOTOOLCHAIN="${GOTOOLCHAIN:-go1.24.9}"
   export PORT="$PORT"
+
+  # 开发环境默认代理（可通过外部环境变量覆盖）
+  export http_proxy="${http_proxy:-${HTTP_PROXY:-http://127.0.0.1:7897}}"
+  export https_proxy="${https_proxy:-${HTTPS_PROXY:-http://127.0.0.1:7897}}"
+  export all_proxy="${all_proxy:-${ALL_PROXY:-socks5://127.0.0.1:7897}}"
+  export HTTP_PROXY="${HTTP_PROXY:-$http_proxy}"
+  export HTTPS_PROXY="${HTTPS_PROXY:-$https_proxy}"
+  export ALL_PROXY="${ALL_PROXY:-$all_proxy}"
+  export no_proxy="${no_proxy:-${NO_PROXY:-127.0.0.1,localhost}}"
+  export NO_PROXY="${NO_PROXY:-$no_proxy}"
+
   export CACHE_ENABLED="${CACHE_ENABLED:-true}"
   export CACHE_PATH="${CACHE_PATH:-./cache}"
   export CACHE_MAX_SIZE="${CACHE_MAX_SIZE:-100}"
@@ -107,6 +118,7 @@ start() {
   fi
 
   echo "启动中: 端口=$PORT, 日志=$LOG_FILE"
+  echo "代理: http_proxy=$http_proxy https_proxy=$https_proxy all_proxy=$all_proxy"
   (
     cd "$ROOT_DIR"
     go build -o "$BIN_FILE" .
@@ -148,6 +160,7 @@ watch() {
 
   echo "热重启模式启动: 监听 Go 源码变化并自动重启"
   echo "日志文件: $LOG_FILE"
+  echo "代理: http_proxy=$http_proxy https_proxy=$https_proxy all_proxy=$all_proxy"
 
   cleanup_watch() {
     if [[ -f "$PID_FILE" ]]; then

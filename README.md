@@ -101,6 +101,9 @@ cd pansou
 | **HTTPS_PROXY/HTTP_PROXY** | HTTPS/HTTP代理 | 无 | 如：`HTTPS_PROXY=http://127.0.0.1:1080`,`HTTP_PROXY=http://127.0.0.1:1080` |
 | **CHANNELS** | 默认搜索的TG频道 | `tgsearchers3` | 多个频道用逗号分隔 |
 | **ENABLED_PLUGINS** | 指定启用插件，多个插件用逗号分隔 | 无 | 必须显式指定 |
+| **DOUBAN_FETCH_INTERVAL_MINUTES** | 豆瓣榜单预抓取周期（分钟） | `30` | 新增豆瓣榜单接口时建议配置 |
+| **DOUBAN_HTTP_TIMEOUT_SECONDS** | 豆瓣接口请求超时（秒） | `10` | 网络较慢可适当调大 |
+| **DOUBAN_CACHE_TTL_MINUTES** | 豆瓣榜单缓存有效期（分钟） | `2880` | 默认48小时，建议与反爬策略配合 |
 
 #### 认证配置（可选）
 
@@ -151,7 +154,27 @@ curl -X POST http://localhost:8888/api/search \
   -H "Authorization: Bearer eyJhbGc..." \
   -H "Content-Type: application/json" \
   -d '{"kw":"速度与激情"}'
+
+# 3. 查询豆瓣榜单接口（需启用 douban 插件）
+curl "http://localhost:8888/api/douban/rankings?type=movie_hot&limit=20" \
+  -H "Authorization: Bearer eyJhbGc..."
 ```
+
+### 豆瓣榜单接口
+
+- `GET /api/douban/rankings`：获取榜单数据（默认返回四类榜单）
+- `GET /api/douban/rankings?type=movie_hot&limit=20`：获取指定榜单
+
+支持的 `type`：
+
+- `movie_hot`：电影热榜
+- `tv_hot`：电视剧热榜
+- `new_movies`：新片榜
+
+说明：
+
+- 接口默认受认证中间件保护，需携带 `Authorization: Bearer <token>`
+- 采用“定时预抓取 + 接口读缓存”策略，缓存失效时自动回源刷新
 
 #### 高级配置（默认值即可）
 
