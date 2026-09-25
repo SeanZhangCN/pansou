@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -376,9 +377,15 @@ languan8K115"></textarea>
             }
         }
 
+        function escapeHTML(value) {
+            const element = document.createElement('span');
+            element.textContent = String(value || '');
+            return element.innerHTML;
+        }
+
         function showAlert(message, type = 'success') {
             const alertBox = document.getElementById('alert-box');
-            alertBox.innerHTML = '<div class="alert alert-' + type + '">' + message + '</div>';
+            alertBox.innerHTML = '<div class="alert alert-' + type + '">' + escapeHTML(message) + '</div>';
             setTimeout(() => {
                 alertBox.innerHTML = '';
             }, 3000);
@@ -419,7 +426,8 @@ languan8K115"></textarea>
             
             const result = await postAction('set_channels', { channels });
             if (result.success) {
-                showAlert(result.message);
+                const warning = result.data.warning;
+                showAlert(result.message + (warning ? '\n' + warning : ''), warning ? 'error' : 'success');
                 updateStatus();
             } else {
                 showAlert(result.message, 'error');
@@ -449,6 +457,9 @@ languan8K115"></textarea>
                 }
 
                 let html = '<p><strong>找到 ' + result.data.total_results + ' 条结果</strong></p>';
+                if (result.data.warning) {
+                    html += '<p style="color: #c53030; white-space: pre-wrap;">' + escapeHTML(result.data.warning) + '</p>';
+                }
                 results.forEach((item, index) => {
                     html += '<div style="margin: 15px 0; padding: 10px; background: white; border-radius: 6px;">';
                     html += '<p><strong>' + (index + 1) + '. ' + item.title + '</strong></p>';
@@ -462,7 +473,7 @@ languan8K115"></textarea>
                 });
                 resultsDiv.innerHTML = html;
             } else {
-                resultsDiv.innerHTML = '<p style="color: red;">' + result.message + '</p>';
+                resultsDiv.innerHTML = '<p style="color: red; white-space: pre-wrap;">' + escapeHTML(result.message) + '</p>';
             }
         }
 
@@ -479,6 +490,7 @@ type QQPDPlugin struct {
 	users       sync.Map // 内存缓存：hash -> *User
 	mu          sync.RWMutex
 	initialized bool // 初始化状态标记
+	httpClient  *http.Client
 }
 
 // User 用户数据结构
@@ -612,7 +624,15 @@ func (p *QQPDPlugin) SearchWithResult(keyword string, ext map[string]interface{}
 	}
 
 	// 4. 并发执行所有任务
-	results := p.executeTasks(tasks, keyword)
+	results, searchErr := p.executeTasks(tasks, keyword)
+	message := ""
+	if searchErr != nil {
+		message = searchErr.Error()
+		if len(results) == 0 {
+			return model.PluginSearchResult{Results: []model.SearchResult{}, IsFinal: true, Message: message}, searchErr
+		}
+		fmt.Printf("[QQPD] 部分频道搜索失败: %v\n", searchErr)
+	}
 	if DebugLog {
 		fmt.Printf("[QQPD] 所有任务完成，获得 %d 条原始结果\n", len(results))
 	}
@@ -627,6 +647,7 @@ func (p *QQPDPlugin) SearchWithResult(keyword string, ext map[string]interface{}
 	return model.PluginSearchResult{
 		Results: results, // 返回原始结果，不过滤
 		IsFinal: true,
+		Message: message,
 	}, nil
 }
 
@@ -654,6 +675,11 @@ func (p *QQPDPlugin) loadAllUsers() {
 		var user User
 		if err := json.Unmarshal(data, &user); err != nil {
 			continue
+		}
+		for channelNumber, guildID := range user.ChannelGuildIDs {
+			if !validGuildID(guildID) {
+				delete(user.ChannelGuildIDs, channelNumber)
+			}
 		}
 
 		// 加载到内存
@@ -684,6 +710,12 @@ func (p *QQPDPlugin) saveUser(user *User) error {
 
 // persistUser 持久化用户到文件
 func (p *QQPDPlugin) persistUser(user *User) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.persistUserLocked(user)
+}
+
+func (instance *QQPDPlugin) persistUserLocked(user *User) error {
 	filePath := filepath.Join(StorageDir, user.Hash+".json")
 
 	data, err := json.MarshalIndent(user, "", "  ")
@@ -1131,92 +1163,40 @@ func (p *QQPDPlugin) handleSetChannelsWithData(c *gin.Context, hash string, reqD
 		}
 	}
 
-	// 初始化guild_id映射（如果不存在）
+	p.mu.Lock()
 	if user.ChannelGuildIDs == nil {
 		user.ChannelGuildIDs = make(map[string]string)
 	}
-
-	// 批量获取guild_id并缓存（并发获取，提高速度）
-	needFetch := []string{}
-	for _, channelNumber := range normalizedChannels {
-		// 如果已有缓存，跳过
-		if _, exists := user.ChannelGuildIDs[channelNumber]; exists {
-			if DebugLog {
-				fmt.Printf("[QQPD]   频道 %s: 使用缓存的guild_id\n", channelNumber)
-			}
-			continue
-		}
-		needFetch = append(needFetch, channelNumber)
-	}
-
-	if len(needFetch) > 0 {
-		if DebugLog {
-			fmt.Printf("[QQPD] 开始并发获取 %d 个频道的guild_id...\n", len(needFetch))
-		}
-
-		// 使用并发获取guild_id（大幅提升速度）
-		var wg sync.WaitGroup
-		var mapMutex sync.Mutex
-
-		for _, channelNumber := range needFetch {
-			wg.Add(1)
-			go func(ch string) {
-				defer wg.Done()
-
-				// 获取guild_id
-				guildID := p.extractGuildIDFromChannelNumber(ch)
-
-				// 线程安全地写入map
-				mapMutex.Lock()
-				user.ChannelGuildIDs[ch] = guildID
-				mapMutex.Unlock()
-
-				if DebugLog {
-					if guildID != ch {
-						fmt.Printf("[QQPD]   频道 %s → guild_id %s (已缓存)\n", ch, guildID)
-					} else {
-						fmt.Printf("[QQPD]   频道 %s: 无法获取guild_id，使用原值\n", ch)
-					}
-				}
-			}(channelNumber)
-		}
-
-		// 等待所有并发请求完成
-		wg.Wait()
-
-		if DebugLog {
-			fmt.Printf("[QQPD] 所有频道的guild_id获取完成\n")
-		}
-	}
-
-	// 清理已删除频道的缓存
-	for channelNumber := range user.ChannelGuildIDs {
-		if !seen[channelNumber] {
+	for channelNumber, guildID := range user.ChannelGuildIDs {
+		if !seen[channelNumber] || !validGuildID(guildID) {
 			delete(user.ChannelGuildIDs, channelNumber)
-			if DebugLog {
-				fmt.Printf("[QQPD]   清理已删除频道的缓存: %s\n", channelNumber)
-			}
 		}
 	}
-
-	// 更新用户数据（内存+文件）
 	user.Channels = normalizedChannels
 	user.LastAccessAt = time.Now()
+	p.mu.Unlock()
 
 	if err := p.saveUser(user); err != nil {
 		respondError(c, "保存失败: "+err.Error())
 		return
 	}
 
-	if DebugLog {
-		fmt.Printf("[QQPD] 频道配置已保存，共缓存 %d 个guild_id\n", len(user.ChannelGuildIDs))
+	_, resolveErr := p.resolveChannelTasks(p.buildChannelTasks([]*User{user}))
+	message := "频道列表已更新"
+	warning := ""
+	if resolveErr != nil {
+		message += "，部分频道解析失败，将在搜索时重试"
+		warning = resolveErr.Error()
 	}
-
-	respondSuccess(c, "频道列表已更新", gin.H{
+	p.mu.RLock()
+	cachedCount := len(user.ChannelGuildIDs)
+	p.mu.RUnlock()
+	respondSuccess(c, message, gin.H{
 		"channels":         normalizedChannels,
 		"channel_count":    len(normalizedChannels),
 		"invalid_channels": invalid,
-		"guild_ids_cached": len(user.ChannelGuildIDs),
+		"guild_ids_cached": cachedCount,
+		"warning":          warning,
 	})
 }
 
@@ -1230,7 +1210,7 @@ func (p *QQPDPlugin) handleTestSearchWithData(c *gin.Context, hash string, reqDa
 	}
 
 	maxResults := 10
-	if mr, ok := reqData["max_results"].(float64); ok {
+	if mr, ok := reqData["max_results"].(float64); ok && mr >= 1 {
 		maxResults = int(mr)
 	}
 
@@ -1245,31 +1225,16 @@ func (p *QQPDPlugin) handleTestSearchWithData(c *gin.Context, hash string, reqDa
 		return
 	}
 
-	// 执行真实搜索
-	tasks := []ChannelTask{}
-	for _, channelID := range user.Channels {
-		// 从缓存获取guild_id
-		var guildID string
-		if user.ChannelGuildIDs != nil {
-			if cachedGuildID, exists := user.ChannelGuildIDs[channelID]; exists {
-				guildID = cachedGuildID
-			}
+	tasks := p.buildChannelTasks([]*User{user})
+	allResults, searchErr := p.executeTasks(tasks, keyword)
+	warning := ""
+	if searchErr != nil {
+		if len(allResults) == 0 {
+			respondError(c, searchErr.Error())
+			return
 		}
-		// 如果缓存中没有，实时获取
-		if guildID == "" {
-			guildID = p.extractGuildIDFromChannelNumber(channelID)
-		}
-
-		tasks = append(tasks, ChannelTask{
-			ChannelID: channelID,
-			GuildID:   guildID,
-			UserHash:  user.Hash,
-			Cookie:    user.Cookie,
-		})
+		warning = searchErr.Error()
 	}
-
-	// 并发搜索所有频道
-	allResults := p.executeTasks(tasks, keyword)
 
 	// 不在插件内过滤，交给Service层处理
 	// filteredResults := plugin.FilterResultsByKeyword(allResults, keyword)
@@ -1303,6 +1268,7 @@ func (p *QQPDPlugin) handleTestSearchWithData(c *gin.Context, hash string, reqDa
 		"total_results":     len(results),
 		"channels_searched": user.Channels,
 		"results":           results,
+		"warning":           warning,
 	})
 }
 
@@ -1310,6 +1276,8 @@ func (p *QQPDPlugin) handleTestSearchWithData(c *gin.Context, hash string, reqDa
 
 // buildChannelTasks 构建频道任务列表（去重+负载均衡）
 func (p *QQPDPlugin) buildChannelTasks(users []*User) []ChannelTask {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	// 1. 收集所有频道及其所属用户
 	channelOwners := make(map[string][]*User)
 
@@ -1346,12 +1314,8 @@ func (p *QQPDPlugin) buildChannelTasks(users []*User) []ChannelTask {
 			}
 		}
 
-		// 如果缓存中没有，实时获取（这种情况应该很少发生）
-		if guildID == "" {
-			guildID = p.extractGuildIDFromChannelNumber(channelID)
-			if DebugLog {
-				fmt.Printf("[QQPD]   频道 %s: 缓存未命中，实时获取guild_id %s\n", channelID, guildID)
-			}
+		if !validGuildID(guildID) {
+			guildID = ""
 		}
 
 		// 创建任务
@@ -1370,8 +1334,10 @@ func (p *QQPDPlugin) buildChannelTasks(users []*User) []ChannelTask {
 }
 
 // executeTasks 并发执行所有频道搜索任务
-func (p *QQPDPlugin) executeTasks(tasks []ChannelTask, keyword string) []model.SearchResult {
+func (p *QQPDPlugin) executeTasks(tasks []ChannelTask, keyword string) ([]model.SearchResult, error) {
+	tasks, resolveErr := p.resolveChannelTasks(tasks)
 	var allResults []model.SearchResult
+	taskErrors := []error{resolveErr}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
@@ -1380,7 +1346,7 @@ func (p *QQPDPlugin) executeTasks(tasks []ChannelTask, keyword string) []model.S
 
 	for _, task := range tasks {
 		wg.Add(1)
-		go func(t ChannelTask) {
+		go func(task ChannelTask) {
 			defer wg.Done()
 
 			// 获取信号量
@@ -1388,250 +1354,66 @@ func (p *QQPDPlugin) executeTasks(tasks []ChannelTask, keyword string) []model.S
 			defer func() { <-semaphore }()
 
 			// 搜索单个频道（使用预先获取的guild_id）
-			results := p.searchSingleChannel(keyword, t.Cookie, t.ChannelID, t.GuildID)
+			results, err := p.searchSingleChannel(keyword, task.Cookie, task.ChannelID, task.GuildID)
 
 			// 安全地追加结果（UniqueID已在extractResultInfo中设置）
 			mu.Lock()
 			allResults = append(allResults, results...)
+			if err != nil {
+				taskErrors = append(taskErrors, fmt.Errorf("频道 %s: %w", task.ChannelID, err))
+			}
 			mu.Unlock()
 		}(task)
 	}
 
 	wg.Wait()
-	return allResults
+	return allResults, errors.Join(taskErrors...)
 }
 
-// extractGuildIDFromChannelNumber 从频道号提取真实的guild_id
-func (p *QQPDPlugin) extractGuildIDFromChannelNumber(channelNumber string) string {
-	// 如果已经是纯数字的guild_id，直接返回
-	if matched, _ := regexp.MatchString(`^\d+$`, channelNumber); matched {
-		return channelNumber
+func (p *QQPDPlugin) searchSingleChannel(keyword, cookieStr, channelID, guildID string) ([]model.SearchResult, error) {
+	if !validGuildID(guildID) {
+		return nil, fmt.Errorf("[QQPD] 搜索需要有效的数字guild_id")
 	}
-
-	// 访问频道页面获取guild_id
-	url := fmt.Sprintf("https://pd.qq.com/g/%s", channelNumber)
-
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-	}
-
-	resp, err := client.Get(url)
-	if err != nil {
-		if DebugLog {
-			fmt.Printf("[QQPD] 访问频道页面失败: %v\n", err)
-		}
-		return channelNumber
-	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		if DebugLog {
-			fmt.Printf("[QQPD] 读取页面失败: %v\n", err)
-		}
-		return channelNumber
-	}
-
-	// 从HTML中提取guild_id
-	// 查找类似: https://groupprohead.gtimg.cn/592843764045681811/
-	pattern := regexp.MustCompile(`https://groupprohead\.gtimg\.cn/(\d+)/`)
-	matches := pattern.FindSubmatch(body)
-
-	if len(matches) > 1 {
-		guildID := string(matches[1])
-		if DebugLog {
-			fmt.Printf("[QQPD] 频道号 %s → guild_id %s\n", channelNumber, guildID)
-		}
-		return guildID
-	}
-
-	if DebugLog {
-		fmt.Printf("[QQPD] 未能从页面提取guild_id，使用原始值: %s\n", channelNumber)
-	}
-	return channelNumber
-}
-
-// searchSingleChannel 搜索单个频道
-func (p *QQPDPlugin) searchSingleChannel(keyword, cookieStr, channelID, guildID string) []model.SearchResult {
-	if DebugLog {
-		fmt.Printf("[QQPD] 开始搜索频道: %s (guild_id: %s), 关键词: %s\n", channelID, guildID, keyword)
-	}
-
-	// 搜索前刷新cookies（更新uuid等动态字段）
-	cookieStr = p.refreshCookie(cookieStr)
-
-	// 解析Cookie
-	cookies := parseCookieString(cookieStr)
-	pSkey, ok := cookies["p_skey"]
-	if !ok {
-		if DebugLog {
-			fmt.Printf("[QQPD] Cookie中缺少p_skey\n")
-		}
-		return []model.SearchResult{}
-	}
-
-	// 计算bkn
-	bknValue := bkn(pSkey)
-	apiURL := fmt.Sprintf("https://pd.qq.com/qunng/guild/gotrpc/auth/trpc.group_pro.in_guild_search_svr.InGuildSearch/NewSearch?bkn=%d", bknValue)
-
-	if DebugLog {
-		fmt.Printf("[QQPD] API URL: %s\n", apiURL)
-		fmt.Printf("[QQPD] bkn: %d\n", bknValue)
-	}
-
-	// 构建请求payload
 	payload := map[string]interface{}{
 		"guild_id":      guildID,
 		"query":         keyword,
 		"cookie":        "",
 		"member_cookie": "",
-		"search_type": map[string]int{
-			"type":      0,
-			"feed_type": 0,
-		},
+		"search_type":   map[string]int{"type": 0, "feed_type": 0},
 		"cond": map[string]interface{}{
 			"channel_ids":    []string{},
 			"feed_rank_type": 0,
 			"type_list":      []int{2, 3},
 		},
 	}
-
-	payloadBytes, _ := json.Marshal(payload)
-	if DebugLog {
-		fmt.Printf("[QQPD] Payload: %s\n", string(payloadBytes))
-	}
-
-	// 创建HTTP请求
-	client := &http.Client{
-		Timeout: 15 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-	}
-
-	req, err := http.NewRequest("POST", apiURL, strings.NewReader(string(payloadBytes)))
+	body, err := p.requestAPI(qqpdSearchEndpoint, cookieStr, `{"uint32_command":"0x9287","uint32_service_type":"2"}`, payload)
 	if err != nil {
-		if DebugLog {
-			fmt.Printf("[QQPD] 创建请求失败: %v\n", err)
-		}
-		return []model.SearchResult{}
+		return nil, err
 	}
-
-	// 设置请求头
-	req.Header.Set("x-oidb", `{"uint32_command":"0x9287","uint32_service_type":"2"}`)
-	req.Header.Set("content-type", "application/json")
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	req.Header.Set("Referer", "https://pd.qq.com/")
-	req.Header.Set("Origin", "https://pd.qq.com")
-	req.Header.Set("Accept", "application/json, text/plain, */*")
-	req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
-
-	// 设置Cookie
-	for k, v := range cookies {
-		req.AddCookie(&http.Cookie{Name: k, Value: v})
+	var response struct {
+		Data *struct {
+			UnionResult *struct {
+				GuildFeeds []map[string]interface{} `json:"guild_feeds"`
+			} `json:"union_result"`
+		} `json:"data"`
 	}
-
-	// 发送请求
-	resp, err := client.Do(req)
-	if err != nil {
-		if DebugLog {
-			fmt.Printf("[QQPD] 请求失败: %v\n", err)
-		}
-		return []model.SearchResult{}
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("[QQPD] 解析搜索结果失败: %w", err)
 	}
-	defer resp.Body.Close()
-
-	// 读取响应体（无论成功与否都要读取，以便诊断问题）
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		if DebugLog {
-			fmt.Printf("[QQPD] 读取响应体失败: %v\n", err)
-		}
-		return []model.SearchResult{}
+	if response.Data == nil {
+		return nil, fmt.Errorf("[QQPD] 搜索响应缺少data字段")
 	}
-
-	if resp.StatusCode != 200 {
-		if DebugLog {
-			fmt.Printf("[QQPD] 请求返回状态码: %d\n", resp.StatusCode)
-			fmt.Printf("[QQPD] 响应头: %v\n", resp.Header)
-			if len(body) < 1000 {
-				fmt.Printf("[QQPD] 响应内容: %s\n", string(body))
-			} else {
-				fmt.Printf("[QQPD] 响应内容(前500字符): %s...\n", string(body[:500]))
-			}
-		}
-		return []model.SearchResult{}
+	results := make([]model.SearchResult, 0)
+	if response.Data.UnionResult == nil {
+		return results, nil
 	}
-
-	// 解析响应（body已在上面读取）
-	if DebugLog {
-		fmt.Printf("[QQPD] 响应长度: %d 字节\n", len(body))
-		if len(body) < 500 {
-			fmt.Printf("[QQPD] 响应内容: %s\n", string(body))
-		} else {
-			fmt.Printf("[QQPD] 响应内容: %s...\n", string(body[:500]))
-		}
-	}
-
-	var apiResp map[string]interface{}
-	if err := json.Unmarshal(body, &apiResp); err != nil {
-		if DebugLog {
-			fmt.Printf("[QQPD] JSON解析失败: %v\n", err)
-		}
-		return []model.SearchResult{}
-	}
-
-	// 提取搜索结果
-	data, ok := apiResp["data"].(map[string]interface{})
-	if !ok {
-		if DebugLog {
-			fmt.Printf("[QQPD] 响应中没有data字段\n")
-		}
-		return []model.SearchResult{}
-	}
-
-	unionResult, ok := data["union_result"].(map[string]interface{})
-	if !ok {
-		if DebugLog {
-			fmt.Printf("[QQPD] data中没有union_result字段\n")
-		}
-		return []model.SearchResult{}
-	}
-
-	guildFeeds, ok := unionResult["guild_feeds"].([]interface{})
-	if !ok {
-		if DebugLog {
-			fmt.Printf("[QQPD] union_result中没有guild_feeds字段\n")
-		}
-		return []model.SearchResult{}
-	}
-
-	if DebugLog {
-		fmt.Printf("[QQPD] 找到 %d 条原始结果\n", len(guildFeeds))
-	}
-
-	// 转换为标准格式
-	var results []model.SearchResult
-	for i, item := range guildFeeds {
-		itemMap, ok := item.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		result := p.extractResultInfo(itemMap, channelID, i)
+	for index, item := range response.Data.UnionResult.GuildFeeds {
+		result := p.extractResultInfo(item, channelID, index)
 		if result.Title != "" && len(result.Links) > 0 {
 			results = append(results, result)
 		}
 	}
-
-	if DebugLog {
-		fmt.Printf("[QQPD] 频道 %s 返回 %d 条有效结果\n", guildID, len(results))
-	}
-
-	return results
+	return results, nil
 }
 
 // extractResultInfo 从搜索结果中提取信息
@@ -1896,7 +1678,7 @@ func (p *QQPDPlugin) fetchFullCookie(uin, ptsigx, setCookieHeader string) (strin
 
 	// 优先使用resp.Cookies()获取cookies（Go的http.Client自动解析Set-Cookie）
 	cookieDict := make(map[string]string)
-	
+
 	// 首先从resp.Cookies()获取（更可靠，自动处理Set-Cookie）
 	for _, cookie := range resp.Cookies() {
 		if cookie.Value != "" {
@@ -1939,16 +1721,16 @@ func (p *QQPDPlugin) parseSetCookieHeader(setCookie string) (string, string) {
 	if len(parts) == 0 {
 		return "", ""
 	}
-	
+
 	nameValue := strings.TrimSpace(parts[0])
 	idx := strings.Index(nameValue, "=")
 	if idx <= 0 {
 		return "", ""
 	}
-	
+
 	key := strings.TrimSpace(nameValue[:idx])
 	value := strings.TrimSpace(nameValue[idx+1:])
-	
+
 	// 跳过cookie属性（不是真正的cookie名称）
 	skipAttrs := map[string]bool{
 		"Domain": true, "Path": true, "Expires": true, "Max-Age": true,
@@ -1957,7 +1739,7 @@ func (p *QQPDPlugin) parseSetCookieHeader(setCookie string) (string, string) {
 	if skipAttrs[key] {
 		return "", ""
 	}
-	
+
 	return key, value
 }
 
@@ -2006,7 +1788,7 @@ func (p *QQPDPlugin) refreshCookie(cookieStr string) string {
 
 	// 从响应中提取新cookies
 	newCookies := make(map[string]string)
-	
+
 	// 优先使用resp.Cookies()
 	for _, cookie := range resp.Cookies() {
 		if cookie.Value != "" {
@@ -2137,7 +1919,7 @@ func bkn(skey string) int64 {
 func (p *QQPDPlugin) testCookieValid(cookieStr string) bool {
 	// 测试前刷新cookies（更新uuid等动态字段）
 	cookieStr = p.refreshCookie(cookieStr)
-	
+
 	// 解析cookie获取p_skey
 	cookies := parseCookieString(cookieStr)
 	pSkey, ok := cookies["p_skey"]

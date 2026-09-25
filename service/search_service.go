@@ -65,19 +65,19 @@ func logAsyncCacheWithKeyword(keyword, cacheKey string, format string, args ...i
 	if config.AppConfig == nil || !config.AppConfig.AsyncLogEnabled {
 		return
 	}
-	
+
 	// 构建显示的关键词信息
 	displayKeyword := keyword
 	if displayKeyword == "" {
 		displayKeyword = "未知"
 	}
-	
+
 	// 将缓存键替换为简化版本+关键词
 	shortKey := cacheKey
 	if len(cacheKey) > 8 {
 		shortKey = cacheKey[:8] + "..."
 	}
-	
+
 	// 替换格式字符串中的缓存键
 	enhancedFormat := strings.Replace(format, cacheKey, fmt.Sprintf("%s(关键词:%s)", shortKey, displayKeyword), 1)
 	fmt.Printf(enhancedFormat, args...)
@@ -86,7 +86,7 @@ func logAsyncCacheWithKeyword(keyword, cacheKey string, format string, args ...i
 // 全局缓存实例和缓存是否初始化标志
 var (
 	enhancedTwoLevelCache *cache.EnhancedTwoLevelCache
-	cacheInitialized bool
+	cacheInitialized      bool
 )
 
 // 初始化缓存
@@ -105,13 +105,13 @@ func init() {
 func mergeSearchResults(existing []model.SearchResult, newResults []model.SearchResult) []model.SearchResult {
 	// 使用map进行去重和合并，以UniqueID作为唯一标识
 	resultMap := make(map[string]model.SearchResult)
-	
+
 	// 先添加现有结果
 	for _, result := range existing {
 		key := generateResultKey(result)
 		resultMap[key] = result
 	}
-	
+
 	// 合并新结果，如果UniqueID相同则选择信息更完整的
 	for _, newResult := range newResults {
 		key := generateResultKey(newResult)
@@ -123,18 +123,18 @@ func mergeSearchResults(existing []model.SearchResult, newResults []model.Search
 			resultMap[key] = newResult
 		}
 	}
-	
+
 	// 转换回切片
 	merged := make([]model.SearchResult, 0, len(resultMap))
 	for _, result := range resultMap {
 		merged = append(merged, result)
 	}
-	
+
 	// 按时间排序（最新的在前）
 	sort.Slice(merged, func(i, j int) bool {
 		return merged[i].Datetime.After(merged[j].Datetime)
 	})
-	
+
 	return merged
 }
 
@@ -155,7 +155,7 @@ func selectBetterResult(existing, new model.SearchResult) model.SearchResult {
 	// 计算信息完整度得分
 	existingScore := calculateCompletenessScore(existing)
 	newScore := calculateCompletenessScore(new)
-	
+
 	if newScore > existingScore {
 		return new
 	}
@@ -165,35 +165,35 @@ func selectBetterResult(existing, new model.SearchResult) model.SearchResult {
 // calculateCompletenessScore 计算结果信息的完整度得分
 func calculateCompletenessScore(result model.SearchResult) int {
 	score := 0
-	
+
 	// 有UniqueID加分
 	if result.UniqueID != "" {
 		score += 10
 	}
-	
+
 	// 有链接信息加分
 	if len(result.Links) > 0 {
 		score += 5
 		// 每个链接额外加分
 		score += len(result.Links)
 	}
-	
+
 	// 有内容加分
 	if result.Content != "" {
 		score += 3
 	}
-	
+
 	// 标题长度加分（更详细的标题）
 	score += len(result.Title) / 10
-	
+
 	// 有频道信息加分
 	if result.Channel != "" {
 		score += 2
 	}
-	
+
 	// 有标签加分
 	score += len(result.Tags)
-	
+
 	return score
 }
 
@@ -213,10 +213,10 @@ func NewSearchService(pluginManager *plugin.PluginManager) *SearchService {
 			cacheInitialized = true
 		}
 	}
-	
+
 	// 将主缓存注入到异步插件中
 	injectMainCacheToAsyncPlugins(pluginManager, enhancedTwoLevelCache)
-	
+
 	// 确保缓存写入管理器设置了主缓存更新函数
 	if globalCacheWriteManager != nil && enhancedTwoLevelCache != nil {
 		globalCacheWriteManager.SetMainCacheUpdater(func(key string, data []byte, ttl time.Duration) error {
@@ -235,20 +235,20 @@ func injectMainCacheToAsyncPlugins(pluginManager *plugin.PluginManager, mainCach
 	if mainCache == nil || pluginManager == nil {
 		return
 	}
-	
+
 	// 设置全局序列化器，确保异步插件与主程序使用相同的序列化格式
 	serializer := mainCache.GetSerializer()
 	if serializer != nil {
 		plugin.SetGlobalCacheSerializer(serializer)
 	}
-	
+
 	// 创建缓存更新函数（支持IsFinal参数）- 接收原始数据并与现有缓存合并
 	cacheUpdater := func(key string, newResults []model.SearchResult, ttl time.Duration, isFinal bool, keyword string, pluginName string) error {
 		// 优化：如果新结果为空，跳过缓存更新（避免无效操作）
 		if len(newResults) == 0 {
 			return nil
 		}
-		
+
 		// 获取现有缓存数据进行合并
 		var finalResults []model.SearchResult
 		if existingData, hit, err := mainCache.Get(key); err == nil && hit {
@@ -258,69 +258,69 @@ func injectMainCacheToAsyncPlugins(pluginManager *plugin.PluginManager, mainCach
 				finalResults = mergeSearchResults(existingResults, newResults)
 				if config.AppConfig != nil && config.AppConfig.AsyncLogEnabled {
 					if keyword != "" {
-						fmt.Printf("🔄 [%s:%s] 更新缓存| 原有: %d + 新增: %d = 合并后: %d\n", 
-						pluginName, keyword, len(existingResults), len(newResults), len(finalResults))
+						fmt.Printf("🔄 [%s:%s] 更新缓存| 原有: %d + 新增: %d = 合并后: %d\n",
+							pluginName, keyword, len(existingResults), len(newResults), len(finalResults))
 					}
 				}
 			} else {
 				// 反序列化失败，使用新结果
 				finalResults = newResults
-							if config.AppConfig != nil && config.AppConfig.AsyncLogEnabled {
-				displayKey := key[:8] + "..."
-				if keyword != "" {
-					fmt.Printf("[异步插件 %s] 缓存反序列化失败，使用新结果: %s(关键词:%s) | 结果数: %d\n", pluginName, displayKey, keyword, len(newResults))
-				} else {
-					fmt.Printf("[异步插件 %s] 缓存反序列化失败，使用新结果: %s | 结果数: %d\n", pluginName, key, len(newResults))
+				if config.AppConfig != nil && config.AppConfig.AsyncLogEnabled {
+					displayKey := key[:8] + "..."
+					if keyword != "" {
+						fmt.Printf("[异步插件 %s] 缓存反序列化失败，使用新结果: %s(关键词:%s) | 结果数: %d\n", pluginName, displayKey, keyword, len(newResults))
+					} else {
+						fmt.Printf("[异步插件 %s] 缓存反序列化失败，使用新结果: %s | 结果数: %d\n", pluginName, key, len(newResults))
+					}
 				}
-			}
 			}
 		} else {
 			// 无现有缓存，直接使用新结果
 			finalResults = newResults
-					if config.AppConfig != nil && config.AppConfig.AsyncLogEnabled {
-			displayKey := key[:8] + "..."
-			if keyword != "" {
-				fmt.Printf("[异步插件 %s] 初始缓存创建: %s(关键词:%s) | 结果数: %d\n", pluginName, displayKey, keyword, len(newResults))
-			} else {
-				fmt.Printf("[异步插件 %s] 初始缓存创建: %s | 结果数: %d\n", pluginName, key, len(newResults))
+			if config.AppConfig != nil && config.AppConfig.AsyncLogEnabled {
+				displayKey := key[:8] + "..."
+				if keyword != "" {
+					fmt.Printf("[异步插件 %s] 初始缓存创建: %s(关键词:%s) | 结果数: %d\n", pluginName, displayKey, keyword, len(newResults))
+				} else {
+					fmt.Printf("[异步插件 %s] 初始缓存创建: %s | 结果数: %d\n", pluginName, key, len(newResults))
+				}
 			}
 		}
-		}
-		
+
 		// 序列化合并后的结果
 		data, err := mainCache.GetSerializer().Serialize(finalResults)
 		if err != nil {
 			fmt.Printf("[缓存更新] 序列化失败: %s | 错误: %v\n", key, err)
 			return err
 		}
-		
+
 		// 先更新内存缓存（立即可见）
 		if err := mainCache.SetMemoryOnly(key, data, ttl); err != nil {
 			return fmt.Errorf("内存缓存更新失败: %v", err)
 		}
-		
+
 		// 使用新的缓存写入管理器处理磁盘写入（智能批处理）
 		if cacheWriteManager := globalCacheWriteManager; cacheWriteManager != nil {
 			operation := &cache.CacheOperation{
-				Key:          key,
-				Data:         finalResults,      // 使用原始数据而不是序列化后的
-				TTL:          ttl,
-				IsFinal:      isFinal,
-				PluginName:   pluginName,
-				Keyword:      keyword,
-				Priority:     2,                 // 中等优先级
-				Timestamp:    time.Now(),
-				DataSize:     len(data),         // 序列化后的数据大小
+				Key:        key,
+				Data:       finalResults, // 使用原始数据而不是序列化后的
+				TTL:        ttl,
+				IsFinal:    isFinal,
+				PluginName: pluginName,
+				Keyword:    keyword,
+				Priority:   2, // 中等优先级
+				Timestamp:  time.Now(),
+				DataSize:   len(data), // 序列化后的数据大小
 			}
-			
+
 			// 根据是否为最终结果设置优先级
 			if isFinal {
-				operation.Priority = 1           // 高优先级
+				operation.Priority = 1 // 高优先级
 			}
-			
+
 			return cacheWriteManager.HandleCacheOperation(operation)
 		}
-		
+
 		// 兜底：如果缓存写入管理器不可用，使用原有逻辑
 		if isFinal {
 			return mainCache.SetBothLevels(key, data, ttl)
@@ -328,14 +328,16 @@ func injectMainCacheToAsyncPlugins(pluginManager *plugin.PluginManager, mainCach
 			return nil // 内存已更新，磁盘稍后批处理
 		}
 	}
-	
+
 	// 获取所有插件
 	plugins := pluginManager.GetPlugins()
-	
+
 	// 遍历所有插件，找出异步插件
 	for _, p := range plugins {
 		// 检查插件是否实现了SetMainCacheUpdater方法（修复后的签名，增加关键词参数）
-		if asyncPlugin, ok := p.(interface{ SetMainCacheUpdater(func(string, []model.SearchResult, time.Duration, bool, string) error) }); ok {
+		if asyncPlugin, ok := p.(interface {
+			SetMainCacheUpdater(func(string, []model.SearchResult, time.Duration, bool, string) error)
+		}); ok {
 			// 为每个插件创建专门的缓存更新函数，绑定插件名称
 			pluginName := p.Name()
 			pluginCacheUpdater := func(key string, newResults []model.SearchResult, ttl time.Duration, isFinal bool, keyword string) error {
@@ -353,7 +355,7 @@ func (s *SearchService) Search(keyword string, channels []string, concurrency in
 	if ext == nil {
 		ext = make(map[string]interface{})
 	}
-	
+
 	// 参数预处理
 	// 源类型标准化
 	if sourceType == "" {
@@ -422,7 +424,7 @@ func (s *SearchService) Search(keyword string, channels []string, concurrency in
 			}
 		}
 	}
-	
+
 	// 如果未指定并发数，使用配置中的默认值
 	if concurrency <= 0 {
 		concurrency = config.AppConfig.DefaultConcurrency
@@ -431,10 +433,10 @@ func (s *SearchService) Search(keyword string, channels []string, concurrency in
 	// 并行获取TG搜索和插件搜索结果
 	var tgResults []model.SearchResult
 	var pluginResults []model.SearchResult
-	
+
 	var wg sync.WaitGroup
 	var tgErr, pluginErr error
-	
+
 	// 如果需要搜索TG
 	if sourceType == "all" || sourceType == "tg" {
 		wg.Add(1)
@@ -453,10 +455,10 @@ func (s *SearchService) Search(keyword string, channels []string, concurrency in
 			pluginResults, pluginErr = s.searchPlugins(keyword, plugins, forceRefresh, concurrency, ext)
 		}()
 	}
-	
+
 	// 等待所有搜索完成
 	wg.Wait()
-	
+
 	// 检查错误
 	if tgErr != nil {
 		return model.SearchResponse{}, tgErr
@@ -464,7 +466,7 @@ func (s *SearchService) Search(keyword string, channels []string, concurrency in
 	if pluginErr != nil {
 		return model.SearchResponse{}, pluginErr
 	}
-	
+
 	// 合并结果
 	allResults := mergeSearchResults(tgResults, pluginResults)
 
@@ -476,7 +478,7 @@ func (s *SearchService) Search(keyword string, channels []string, concurrency in
 	for _, result := range allResults {
 		source := getResultSource(result)
 		pluginLevel := getPluginLevelBySource(source)
-		
+
 		// 有时间的结果或包含优先关键词的结果或高等级插件(1-2级)结果保留在Results中
 		if !result.Datetime.IsZero() || getKeywordPriority(result.Title) > 0 || pluginLevel <= 2 {
 			filteredForResults = append(filteredForResults, result)
@@ -542,10 +544,10 @@ func filterResponseByType(response model.SearchResponse, resultType string) mode
 func sortResultsByTimeAndKeywords(results []model.SearchResult) {
 	// 1. 计算每个结果的综合得分
 	scores := make([]ResultScore, len(results))
-	
+
 	for i, result := range results {
 		source := getResultSource(result)
-		
+
 		scores[i] = ResultScore{
 			Result:       result,
 			TimeScore:    calculateTimeScore(result.Datetime),
@@ -553,27 +555,23 @@ func sortResultsByTimeAndKeywords(results []model.SearchResult) {
 			PluginScore:  getPluginLevelScore(source),
 			TotalScore:   0, // 稍后计算
 		}
-		
+
 		// 计算综合得分
-		scores[i].TotalScore = scores[i].TimeScore + 
-							  float64(scores[i].KeywordScore) + 
-							  float64(scores[i].PluginScore)
+		scores[i].TotalScore = scores[i].TimeScore +
+			float64(scores[i].KeywordScore) +
+			float64(scores[i].PluginScore)
 	}
-	
+
 	// 2. 按综合得分排序
 	sort.Slice(scores, func(i, j int) bool {
 		return scores[i].TotalScore > scores[j].TotalScore
 	})
-	
+
 	// 3. 更新原数组
 	for i, score := range scores {
 		results[i] = score.Result
 	}
 }
-
-
-
-
 
 // 获取标题中包含优先关键词的优先级
 func getKeywordPriority(title string) int {
@@ -633,7 +631,7 @@ func extractLinkTitlePairs(content string) map[string]string {
 	if strings.Contains(content, "\n") {
 		return extractLinkTitlePairsWithNewlines(content)
 	}
-	
+
 	// 如果没有换行符，使用正则表达式直接提取
 	return extractLinkTitlePairsWithoutNewlines(content)
 }
@@ -642,32 +640,32 @@ func extractLinkTitlePairs(content string) map[string]string {
 func extractLinkTitlePairsWithNewlines(content string) map[string]string {
 	// 结果映射：链接URL -> 对应标题
 	linkTitleMap := make(map[string]string)
-	
+
 	// 按行分割内容
 	lines := strings.Split(content, "\n")
-	
+
 	// 链接正则表达式
 	linkRegex := regexp.MustCompile(`https?://[^\s"']+`)
-	
+
 	// 第一遍扫描：识别标题-链接对
 	var lastTitle string
 	var lastTitleIndex int
-	
+
 	for i := 0; i < len(lines); i++ {
 		line := strings.TrimSpace(lines[i])
 		if line == "" {
 			continue
 		}
-		
+
 		// 检查当前行是否包含链接
 		links := linkRegex.FindAllString(line, -1)
-		
+
 		if len(links) > 0 {
 			// 当前行包含链接
-			
+
 			// 检查是否是标准链接行（以"链接："、"地址："等开头）
 			isStandardLinkLine := isLinkLine(line)
-			
+
 			if isStandardLinkLine && lastTitle != "" {
 				// 标准链接行，使用上一个标题
 				for _, link := range links {
@@ -705,7 +703,7 @@ func extractLinkTitlePairsWithNewlines(content string) map[string]string {
 			}
 		}
 	}
-	
+
 	// 第二遍扫描：处理没有匹配到标题的链接
 	// 为每个链接找到最近的上文标题
 	for i := 0; i < len(lines); i++ {
@@ -713,21 +711,21 @@ func extractLinkTitlePairsWithNewlines(content string) map[string]string {
 		if line == "" {
 			continue
 		}
-		
+
 		links := linkRegex.FindAllString(line, -1)
 		if len(links) == 0 {
 			continue
 		}
-		
+
 		for _, link := range links {
 			if _, exists := linkTitleMap[link]; !exists {
 				// 链接没有匹配到标题，尝试找最近的上文标题
 				nearestTitle := ""
-				
+
 				// 向上查找最近的标题行
 				for j := i - 1; j >= 0; j-- {
-					if j == lastTitleIndex || (j+1 < len(lines) && 
-						linkRegex.MatchString(lines[j+1]) && 
+					if j == lastTitleIndex || (j+1 < len(lines) &&
+						linkRegex.MatchString(lines[j+1]) &&
 						!linkRegex.MatchString(lines[j])) {
 						candidateTitle := cleanTitle(lines[j])
 						if candidateTitle != "" {
@@ -736,14 +734,14 @@ func extractLinkTitlePairsWithNewlines(content string) map[string]string {
 						}
 					}
 				}
-				
+
 				if nearestTitle != "" {
 					linkTitleMap[link] = nearestTitle
 				}
 			}
 		}
 	}
-	
+
 	return linkTitleMap
 }
 
@@ -751,26 +749,27 @@ func extractLinkTitlePairsWithNewlines(content string) map[string]string {
 func extractLinkTitlePairsWithoutNewlines(content string) map[string]string {
 	// 结果映射：链接URL -> 对应标题
 	linkTitleMap := make(map[string]string)
-	
+
 	// 使用精确的网盘链接正则表达式集合，避免贪婪匹配
 	linkPatterns := []*regexp.Regexp{
-		util.TianyiPanPattern,  // 天翼云盘
-		util.BaiduPanPattern,   // 百度网盘
-		util.QuarkPanPattern,   // 夸克网盘
-		util.AliyunPanPattern,  // 阿里云盘
-		util.UCPanPattern,      // UC网盘
-		util.Pan123Pattern,     // 123网盘
-		util.Pan115Pattern,     // 115网盘
-		util.XunleiPanPattern,  // 迅雷网盘
+		util.TianyiPanPattern, // 天翼云盘
+		util.BaiduPanPattern,  // 百度网盘
+		util.QuarkPanPattern,  // 夸克网盘
+		util.AliyunPanPattern, // 阿里云盘
+		util.MobilePanPattern, // 移动云盘
+		util.UCPanPattern,     // UC网盘
+		util.Pan123Pattern,    // 123网盘
+		util.Pan115Pattern,    // 115网盘
+		util.XunleiPanPattern, // 迅雷网盘
 	}
-	
+
 	// 收集所有链接及其位置
 	type linkInfo struct {
 		url string
 		pos int
 	}
 	var allLinks []linkInfo
-	
+
 	// 使用各个精确正则表达式查找链接
 	for _, pattern := range linkPatterns {
 		matches := pattern.FindAllString(content, -1)
@@ -781,7 +780,7 @@ func extractLinkTitlePairsWithoutNewlines(content string) map[string]string {
 			}
 		}
 	}
-	
+
 	// 按位置排序
 	for i := 0; i < len(allLinks)-1; i++ {
 		for j := i + 1; j < len(allLinks); j++ {
@@ -790,30 +789,30 @@ func extractLinkTitlePairsWithoutNewlines(content string) map[string]string {
 			}
 		}
 	}
-	
+
 	// URL标准化和去重
 	uniqueLinks := make(map[string]string) // 标准化URL -> 原始URL
 	var links []string
-	
+
 	for _, linkInfo := range allLinks {
 		// 标准化URL（将URL编码转换为中文）
 		normalized := normalizeUrl(linkInfo.url)
-		
+
 		// 如果这个标准化URL还没有见过，则保留
 		if _, exists := uniqueLinks[normalized]; !exists {
 			uniqueLinks[normalized] = linkInfo.url
 			links = append(links, linkInfo.url)
 		}
 	}
-	
+
 	if len(links) == 0 {
 		return linkTitleMap
 	}
-	
+
 	// 使用链接位置分割内容
 	segments := make([]string, len(links)+1)
 	lastPos := 0
-	
+
 	// 查找每个链接的位置，并提取链接前的文本作为段落
 	for i, link := range links {
 		idx := strings.Index(content[lastPos:], link)
@@ -827,17 +826,17 @@ func extractLinkTitlePairsWithoutNewlines(content string) map[string]string {
 		}
 		lastPos = pos + len(link)
 	}
-	
+
 	// 最后一段
 	if lastPos < len(content) {
 		segments[len(links)] = content[lastPos:]
 	}
-	
+
 	// 从每个段落中提取标题
 	for i, link := range links {
 		// 当前链接的标题应该在当前段落的末尾
 		var title string
-		
+
 		// 如果是第一个链接
 		if i == 0 {
 			// 提取第一个段落作为标题
@@ -846,13 +845,13 @@ func extractLinkTitlePairsWithoutNewlines(content string) map[string]string {
 			// 从上一个链接后的文本中提取标题
 			title = extractTitleBeforeLink(segments[i])
 		}
-		
+
 		// 如果提取到了标题，保存链接-标题对应关系
 		if title != "" {
 			linkTitleMap[link] = title
 		}
 	}
-	
+
 	return linkTitleMap
 }
 
@@ -860,31 +859,31 @@ func extractLinkTitlePairsWithoutNewlines(content string) map[string]string {
 func extractTitleBeforeLink(text string) string {
 	// 移除可能的链接前缀词
 	text = strings.TrimSpace(text)
-	
+
 	// 查找"链接："前的文本作为标题
 	if idx := strings.Index(text, "链接："); idx > 0 {
 		return cleanTitle(text[:idx])
 	}
-	
+
 	// 尝试匹配常见的标题模式
 	titlePattern := regexp.MustCompile(`([^链地资网\s]+?(?:\([^)]+\))?(?:\s*\d+K)?(?:\s*臻彩)?(?:\s*MAX)?(?:\s*HDR)?(?:\s*更(?:新)?\d+集))$`)
 	matches := titlePattern.FindStringSubmatch(text)
 	if len(matches) > 1 {
 		return cleanTitle(matches[1])
 	}
-	
+
 	return cleanTitle(text)
 }
 
 // 判断一行是否为链接行（主要包含链接的行）
 func isLinkLine(line string) bool {
 	lowerLine := strings.ToLower(line)
-	return strings.HasPrefix(lowerLine, "链接：") || 
-		   strings.HasPrefix(lowerLine, "地址：") ||
-		   strings.HasPrefix(lowerLine, "资源地址：") ||
-		   strings.HasPrefix(lowerLine, "网盘：") ||
-		   strings.HasPrefix(lowerLine, "网盘地址：") ||
-		   strings.HasPrefix(lowerLine, "链接:")
+	return strings.HasPrefix(lowerLine, "链接：") ||
+		strings.HasPrefix(lowerLine, "地址：") ||
+		strings.HasPrefix(lowerLine, "资源地址：") ||
+		strings.HasPrefix(lowerLine, "网盘：") ||
+		strings.HasPrefix(lowerLine, "网盘地址：") ||
+		strings.HasPrefix(lowerLine, "链接:")
 }
 
 // 从链接行中提取可能的标题
@@ -895,69 +894,72 @@ func extractTitleFromLinkLine(line string) string {
 		!isLinkPrefix(parts[0]) {
 		return cleanTitle(parts[0])
 	}
-	
+
 	// 处理"标题:链接"格式（半角冒号）
 	parts = strings.SplitN(line, ":", 2)
 	if len(parts) == 2 && !strings.Contains(parts[0], "http") &&
 		!isLinkPrefix(parts[0]) {
 		return cleanTitle(parts[0])
 	}
-	
+
 	return ""
 }
 
 // 判断是否为链接前缀词（包括网盘名称）
 func isLinkPrefix(text string) bool {
 	text = strings.ToLower(strings.TrimSpace(text))
-	
+
 	// 标准链接前缀词
-	if text == "链接" || 
-	   text == "地址" || 
-	   text == "资源地址" || 
-	   text == "网盘" || 
-	   text == "网盘地址" {
+	if text == "链接" ||
+		text == "地址" ||
+		text == "资源地址" ||
+		text == "网盘" ||
+		text == "网盘地址" {
 		return true
 	}
-	
+
 	// 网盘名称（防止误将网盘名称当作标题）
 	cloudDiskNames := []string{
 		// 夸克网盘
 		"夸克", "夸克网盘", "quark", "夸克云盘",
-		
+
 		// 百度网盘
 		"百度", "百度网盘", "baidu", "百度云", "bdwp", "bdpan",
-		
+
 		// 迅雷网盘
 		"迅雷", "迅雷网盘", "xunlei", "迅雷云盘",
-		
+
 		// 115网盘
 		"115", "115网盘", "115云盘",
-		
+
 		// 123网盘
 		"123", "123pan", "123网盘", "123云盘",
-		
+
 		// 阿里云盘
 		"阿里", "阿里云", "阿里云盘", "aliyun", "alipan", "阿里网盘",
-		
+
+		// 光鸭云盘
+		"光鸭", "光鸭云盘", "光鸭网盘", "guangya",
+
 		// 天翼云盘
 		"天翼", "天翼云", "天翼云盘", "tianyi", "天翼网盘",
-		
+
 		// UC网盘
 		"uc", "uc网盘", "uc云盘",
-		
+
 		// 移动云盘
 		"移动", "移动云", "移动云盘", "caiyun", "彩云",
-		
+
 		// PikPak
 		"pikpak", "pikpak网盘",
 	}
-	
+
 	for _, name := range cloudDiskNames {
 		if text == name {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -971,11 +973,11 @@ func cleanTitle(title string) string {
 	title = strings.TrimPrefix(title, "名称:")
 	title = strings.TrimPrefix(title, "标题:")
 	title = strings.TrimPrefix(title, "片名:")
-	
+
 	// 移除表情符号和特殊字符
 	emojiRegex := regexp.MustCompile(`[\p{So}\p{Sk}]`)
 	title = emojiRegex.ReplaceAllString(title, "")
-	
+
 	return strings.TrimSpace(title)
 }
 
@@ -999,17 +1001,17 @@ func mergeResultsByType(results []model.SearchResult, keyword string, cloudTypes
 	for _, result := range results {
 		// 提取消息中的链接-标题对应关系
 		linkTitleMap := extractLinkTitlePairs(result.Content)
-		
+
 		// 如果没有从内容中提取到标题，尝试直接从内容中匹配
 		if len(linkTitleMap) == 0 && len(result.Links) > 0 && !strings.Contains(result.Content, "\n") {
 			// 这是没有换行符的情况，尝试直接匹配
 			content := result.Content
-			
+
 			// 支持多种网盘链接前缀
 			linkPrefixes := []string{"天翼链接：", "百度链接：", "夸克链接：", "阿里链接：", "UC链接：", "115链接：", "迅雷链接：", "123链接：", "链接："}
-			
+
 			var parts []string
-			
+
 			// 尝试找到匹配的前缀
 			for _, prefix := range linkPrefixes {
 				if strings.Contains(content, prefix) {
@@ -1017,13 +1019,13 @@ func mergeResultsByType(results []model.SearchResult, keyword string, cloudTypes
 					break
 				}
 			}
-			
+
 			// 如果找到了匹配的前缀并且分割成功
 			if len(parts) > 1 && len(result.Links) <= len(parts)-1 {
 				// 第一部分是第一个标题
 				titles := make([]string, 0, len(parts))
 				titles = append(titles, cleanTitle(parts[0]))
-				
+
 				// 处理每个包含链接的部分，提取标题
 				for i := 1; i < len(parts)-1; i++ {
 					part := parts[i]
@@ -1031,20 +1033,20 @@ func mergeResultsByType(results []model.SearchResult, keyword string, cloudTypes
 					linkEnd := -1
 					for j, c := range part {
 						// 扩展分隔符列表，包含更多可能的字符
-						if c == ' ' || c == '窃' || c == '东' || c == '迎' || c == '千' || c == '我' || c == '恋' || c == '将' || c == '野' || 
-						   c == '合' || c == '集' || c == '天' || c == '翼' || c == '网' || c == '盘' || c == '(' || c == '（' {
+						if c == ' ' || c == '窃' || c == '东' || c == '迎' || c == '千' || c == '我' || c == '恋' || c == '将' || c == '野' ||
+							c == '合' || c == '集' || c == '天' || c == '翼' || c == '网' || c == '盘' || c == '(' || c == '（' {
 							linkEnd = j
 							break
 						}
 					}
-					
+
 					if linkEnd > 0 {
 						// 提取标题
 						title := cleanTitle(part[linkEnd:])
 						titles = append(titles, title)
 					}
 				}
-				
+
 				// 将标题与链接关联
 				for i, link := range result.Links {
 					if i < len(titles) {
@@ -1053,11 +1055,11 @@ func mergeResultsByType(results []model.SearchResult, keyword string, cloudTypes
 				}
 			}
 		}
-		
+
 		for _, link := range result.Links {
 			// 优先使用链接的WorkTitle字段，如果为空则回退到传统方式
 			title := result.Title // 默认使用消息标题
-			
+
 			if link.WorkTitle != "" {
 				// 如果链接有WorkTitle字段，优先使用
 				title = link.WorkTitle
@@ -1076,7 +1078,7 @@ func mergeResultsByType(results []model.SearchResult, keyword string, cloudTypes
 					}
 				}
 			}
-			
+
 			// 检查插件是否需要跳过Service层过滤
 			var skipKeywordFilter bool = false
 			if result.UniqueID != "" && strings.Contains(result.UniqueID, "-") {
@@ -1089,15 +1091,18 @@ func mergeResultsByType(results []model.SearchResult, keyword string, cloudTypes
 					}
 				}
 			}
-			
-			// 关键词过滤：现在我们有了准确的链接-标题对应关系，只需检查每个链接的具体标题
+
+			// 关键词过滤：插件结果依赖链接标题；Telegram 结果已经经过
+			// t.me/s 的服务端搜索，关键词也可能只出现在简介/正文中，
+			// 不能因为标题字段被日期、格式名或另一作品覆盖而丢弃。
 			if !skipKeywordFilter && keyword != "" {
-				// 只检查链接的具体标题，无论是TG来源还是插件来源
-				if !strings.Contains(strings.ToLower(title), lowerKeyword) {
+				titleMatched := strings.Contains(strings.ToLower(title), lowerKeyword)
+				contentMatched := result.Channel != "" && strings.Contains(strings.ToLower(result.Content), lowerKeyword)
+				if !titleMatched && !contentMatched {
 					continue
 				}
 			}
-			
+
 			// 确定数据来源
 			var source string
 			if result.Channel != "" {
@@ -1113,22 +1118,22 @@ func mergeResultsByType(results []model.SearchResult, keyword string, cloudTypes
 				// 无法确定来源，使用默认值
 				source = "unknown"
 			}
-			
+
 			// 赋值给Note前，支持多个关键词裁剪
 			title = util.CutTitleByKeywords(title, []string{"简介", "描述"})
-			
+
 			// 优先使用链接自己的时间，如果没有则使用搜索结果的时间
 			linkDatetime := result.Datetime
 			if !link.Datetime.IsZero() {
 				linkDatetime = link.Datetime
 			}
-			
+
 			mergedLink := model.MergedLink{
 				URL:      link.URL,
 				Password: link.Password,
 				Note:     title, // 使用找到的特定标题
 				Datetime: linkDatetime,
-				Source:   source, // 添加数据来源字段
+				Source:   source,        // 添加数据来源字段
 				Images:   result.Images, // 添加TG消息中的图片链接
 			}
 
@@ -1149,7 +1154,7 @@ func mergeResultsByType(results []model.SearchResult, keyword string, cloudTypes
 	// 创建一个有序的链接列表，按原始results中的顺序
 	orderedLinks := make([]model.MergedLink, 0, len(uniqueLinks))
 	linkTypeMap := make(map[string]string) // URL -> Type的映射
-	
+
 	// 按原始results的顺序收集唯一链接
 	for _, result := range results {
 		for _, link := range result.Links {
@@ -1169,7 +1174,7 @@ func mergeResultsByType(results []model.SearchResult, keyword string, cloudTypes
 			}
 		}
 	}
-	
+
 	// 将有序链接按类型分组
 	for _, mergedLink := range orderedLinks {
 		// 从预建的映射中获取链接类型
@@ -1182,25 +1187,24 @@ func mergeResultsByType(results []model.SearchResult, keyword string, cloudTypes
 		mergedLinks[linkType] = append(mergedLinks[linkType], mergedLink)
 	}
 
-
 	// 如果指定了cloudTypes，则过滤结果
 	if len(cloudTypes) > 0 {
 		// 创建过滤后的结果映射
 		filteredLinks := make(model.MergedLinks)
-		
+
 		// 将cloudTypes转换为map以提高查找性能
 		allowedTypes := make(map[string]bool)
 		for _, cloudType := range cloudTypes {
 			allowedTypes[strings.ToLower(strings.TrimSpace(cloudType))] = true
 		}
-		
+
 		// 只保留指定类型的链接
 		for linkType, links := range mergedLinks {
 			if allowedTypes[strings.ToLower(linkType)] {
 				filteredLinks[linkType] = links
 			}
 		}
-		
+
 		return filteredLinks
 	}
 
@@ -1211,17 +1215,17 @@ func mergeResultsByType(results []model.SearchResult, keyword string, cloudTypes
 func (s *SearchService) searchTG(keyword string, channels []string, forceRefresh bool) ([]model.SearchResult, error) {
 	// 生成缓存键
 	cacheKey := cache.GenerateTGCacheKey(keyword, channels)
-	
+
 	// 如果未启用强制刷新，尝试从缓存获取结果
 	if !forceRefresh && cacheInitialized && config.AppConfig.CacheEnabled {
 		var data []byte
 		var hit bool
 		var err error
-		
+
 		// 使用增强版缓存
 		if enhancedTwoLevelCache != nil {
 			data, hit, err = enhancedTwoLevelCache.Get(cacheKey)
-			
+
 			if err == nil && hit {
 				var results []model.SearchResult
 				if err := enhancedTwoLevelCache.GetSerializer().Deserialize(data, &results); err == nil {
@@ -1231,13 +1235,13 @@ func (s *SearchService) searchTG(keyword string, channels []string, forceRefresh
 			}
 		}
 	}
-	
+
 	// 缓存未命中或强制刷新，执行实际搜索
 	var results []model.SearchResult
-	
+
 	// 使用工作池并行搜索多个频道
 	tasks := make([]pool.Task, 0, len(channels))
-	
+
 	for _, channel := range channels {
 		ch := channel // 创建副本，避免闭包问题
 		tasks = append(tasks, func() interface{} {
@@ -1248,10 +1252,10 @@ func (s *SearchService) searchTG(keyword string, channels []string, forceRefresh
 			return results
 		})
 	}
-	
+
 	// 执行搜索任务并获取结果
 	taskResults := pool.ExecuteBatchWithTimeout(tasks, len(channels), config.AppConfig.PluginTimeout)
-	
+
 	// 合并所有频道的结果
 	for _, result := range taskResults {
 		if result != nil {
@@ -1259,12 +1263,12 @@ func (s *SearchService) searchTG(keyword string, channels []string, forceRefresh
 			results = append(results, channelResults...)
 		}
 	}
-	
+
 	// 异步缓存结果
 	if cacheInitialized && config.AppConfig.CacheEnabled {
 		go func(res []model.SearchResult) {
 			ttl := time.Duration(config.AppConfig.CacheTTLMinutes) * time.Minute
-			
+
 			// 使用增强版缓存
 			if enhancedTwoLevelCache != nil {
 				data, err := enhancedTwoLevelCache.GetSerializer().Serialize(res)
@@ -1275,7 +1279,7 @@ func (s *SearchService) searchTG(keyword string, channels []string, forceRefresh
 			}
 		}(results)
 	}
-	
+
 	return results, nil
 }
 
@@ -1287,32 +1291,31 @@ func (s *SearchService) searchPlugins(keyword string, plugins []string, forceRef
 	}
 
 	// 关键：将forceRefresh同步到插件ext["refresh"]
-    if forceRefresh {
-        ext["refresh"] = true
-    }
-	
+	if forceRefresh {
+		ext["refresh"] = true
+	}
+
 	// 生成缓存键
 	cacheKey := cache.GeneratePluginCacheKey(keyword, plugins)
-	
-	
+
 	// 如果未启用强制刷新，尝试从缓存获取结果
 	if !forceRefresh && cacheInitialized && config.AppConfig.CacheEnabled {
 		var data []byte
 		var hit bool
 		var err error
-		
+
 		// 使用增强版缓存
 		if enhancedTwoLevelCache != nil {
-			
+
 			// 使用Get方法，它会检查磁盘缓存是否有更新
 			// 如果磁盘缓存比内存缓存更新，会自动更新内存缓存并返回最新数据
 			data, hit, err = enhancedTwoLevelCache.Get(cacheKey)
-			
+
 			if err == nil && hit {
 				var results []model.SearchResult
 				if err := enhancedTwoLevelCache.GetSerializer().Deserialize(data, &results); err == nil {
 					// 返回缓存数据
-					fmt.Printf("✅ [%s] 命中缓存 结果数: %d\n", keyword,  len(results))
+					fmt.Printf("✅ [%s] 命中缓存 结果数: %d\n", keyword, len(results))
 					return results, nil
 				} else {
 					displayKey := cacheKey[:8] + "..."
@@ -1321,18 +1324,18 @@ func (s *SearchService) searchPlugins(keyword string, plugins []string, forceRef
 			}
 		}
 	}
-	
+
 	// 缓存未命中或强制刷新，执行实际搜索
-	
+
 	// 获取所有可用插件
 	var availablePlugins []plugin.AsyncSearchPlugin
 	if s.pluginManager != nil {
 		allPlugins := s.pluginManager.GetPlugins()
-		
+
 		// 确保plugins不为nil并且有非空元素
 		hasPlugins := plugins != nil && len(plugins) > 0
 		hasNonEmptyPlugin := false
-		
+
 		if hasPlugins {
 			for _, p := range plugins {
 				if p != "" {
@@ -1341,7 +1344,7 @@ func (s *SearchService) searchPlugins(keyword string, plugins []string, forceRef
 				}
 			}
 		}
-		
+
 		// 只有当plugins数组包含非空元素时才进行过滤
 		if hasPlugins && hasNonEmptyPlugin {
 			pluginMap := make(map[string]bool)
@@ -1350,7 +1353,7 @@ func (s *SearchService) searchPlugins(keyword string, plugins []string, forceRef
 					pluginMap[strings.ToLower(p)] = true
 				}
 			}
-			
+
 			for _, p := range allPlugins {
 				if pluginMap[strings.ToLower(p.Name())] {
 					availablePlugins = append(availablePlugins, p)
@@ -1361,13 +1364,13 @@ func (s *SearchService) searchPlugins(keyword string, plugins []string, forceRef
 			availablePlugins = allPlugins
 		}
 	}
-	
+
 	// 控制并发数
 	if concurrency <= 0 {
 		// 使用配置中的默认值
 		concurrency = config.AppConfig.DefaultConcurrency
 	}
-	
+
 	// 使用工作池执行并行搜索
 	tasks := make([]pool.Task, 0, len(availablePlugins))
 	for _, p := range availablePlugins {
@@ -1376,23 +1379,21 @@ func (s *SearchService) searchPlugins(keyword string, plugins []string, forceRef
 			// 设置主缓存键和当前关键词
 			plugin.SetMainCacheKey(cacheKey)
 			plugin.SetCurrentKeyword(keyword)
-			
-			// 调用异步插件的AsyncSearch方法
-			results, err := plugin.AsyncSearch(keyword, func(client *http.Client, kw string, extParams map[string]interface{}) ([]model.SearchResult, error) {
-				// 使用插件的Search方法作为搜索函数
-				return plugin.Search(kw, extParams)
-			}, cacheKey, ext)
-			
+
+			// 插件的Search方法已经负责异步调度、插件缓存和后台刷新。
+			// 这里直接调用，避免再包一层AsyncSearch导致嵌套等待和重复超时。
+			results, err := plugin.Search(keyword, ext)
+
 			if err != nil {
 				return nil
 			}
 			return results
 		})
 	}
-	
+
 	// 执行搜索任务并获取结果
 	results := pool.ExecuteBatchWithTimeout(tasks, concurrency, config.AppConfig.PluginTimeout)
-	
+
 	// 合并所有插件的结果，过滤掉无链接的结果
 	var allResults []model.SearchResult
 	for _, result := range results {
@@ -1406,12 +1407,12 @@ func (s *SearchService) searchPlugins(keyword string, plugins []string, forceRef
 			}
 		}
 	}
-	
+
 	// 恢复主程序缓存更新：确保最终合并结果被正确缓存
 	if cacheInitialized && config.AppConfig.CacheEnabled {
 		go func(res []model.SearchResult, kw string, key string) {
 			ttl := time.Duration(config.AppConfig.CacheTTLMinutes) * time.Minute
-			
+
 			// 使用增强版缓存，确保与异步插件使用相同的序列化器
 			if enhancedTwoLevelCache != nil {
 				data, err := enhancedTwoLevelCache.GetSerializer().Serialize(res)
@@ -1419,22 +1420,20 @@ func (s *SearchService) searchPlugins(keyword string, plugins []string, forceRef
 					fmt.Printf("[主程序] 缓存序列化失败: %s | 错误: %v\n", key, err)
 					return
 				}
-				
-			// 主程序最后更新，覆盖可能有问题的异步插件缓存
-			// 使用同步方式确保数据写入磁盘
-			enhancedTwoLevelCache.SetBothLevels(key, data, ttl)
+
+				// 主程序最后更新，覆盖可能有问题的异步插件缓存
+				// 使用同步方式确保数据写入磁盘
+				enhancedTwoLevelCache.SetBothLevels(key, data, ttl)
 				if config.AppConfig != nil && config.AppConfig.AsyncLogEnabled {
-					fmt.Printf("[主程序] 缓存更新完成: %s | 结果数: %d", 
+					fmt.Printf("[主程序] 缓存更新完成: %s | 结果数: %d",
 						key, len(res))
 				}
 			}
 		}(allResults, keyword, cacheKey)
 	}
-	
+
 	return allResults, nil
 }
-
-
 
 // GetPluginManager 获取插件管理器
 func (s *SearchService) GetPluginManager() *plugin.PluginManager {
@@ -1448,10 +1447,10 @@ func (s *SearchService) GetPluginManager() *plugin.PluginManager {
 // ResultScore 搜索结果评分结构
 type ResultScore struct {
 	Result       model.SearchResult
-	TimeScore    float64  // 时间得分
-	KeywordScore int      // 关键词得分  
-	PluginScore  int      // 插件等级得分
-	TotalScore   float64  // 综合得分
+	TimeScore    float64 // 时间得分
+	KeywordScore int     // 关键词得分
+	PluginScore  int     // 插件等级得分
+	TotalScore   float64 // 综合得分
 }
 
 // 插件等级缓存
@@ -1480,24 +1479,24 @@ func getPluginLevelBySource(source string) int {
 	if level, ok := pluginLevelCache.Load(source); ok {
 		return level.(int)
 	}
-	
+
 	parts := strings.Split(source, ":")
 	if len(parts) != 2 {
 		pluginLevelCache.Store(source, 3)
 		return 3 // 默认等级
 	}
-	
+
 	if parts[0] == "tg" {
 		pluginLevelCache.Store(source, 3)
 		return 3 // TG搜索等同于等级3
 	}
-	
+
 	if parts[0] == "plugin" {
 		level := getPluginPriorityByName(parts[1])
 		pluginLevelCache.Store(source, level)
 		return level
 	}
-	
+
 	pluginLevelCache.Store(source, 3)
 	return 3
 }
@@ -1514,18 +1513,18 @@ func getPluginPriorityByName(pluginName string) int {
 // getPluginLevelScore 获取插件等级得分
 func getPluginLevelScore(source string) int {
 	level := getPluginLevelBySource(source)
-	
+
 	switch level {
 	case 1:
-		return 1000  // 等级1插件：1000分
+		return 1000 // 等级1插件：1000分
 	case 2:
-		return 500   // 等级2插件：500分
+		return 500 // 等级2插件：500分
 	case 3:
-		return 0     // 等级3插件：0分
+		return 0 // 等级3插件：0分
 	case 4:
-		return -200  // 等级4插件：-200分
+		return -200 // 等级4插件：-200分
 	default:
-		return 0     // 默认使用等级3得分
+		return 0 // 默认使用等级3得分
 	}
 }
 
@@ -1534,27 +1533,25 @@ func calculateTimeScore(datetime time.Time) float64 {
 	if datetime.IsZero() {
 		return 0 // 无时间信息得0分
 	}
-	
+
 	now := time.Now()
 	daysDiff := now.Sub(datetime).Hours() / 24
-	
+
 	// 时间得分：越新得分越高，最大500分（增加时间权重）
 	switch {
 	case daysDiff <= 1:
-		return 500  // 1天内
+		return 500 // 1天内
 	case daysDiff <= 3:
-		return 400  // 3天内
+		return 400 // 3天内
 	case daysDiff <= 7:
-		return 300  // 1周内
+		return 300 // 1周内
 	case daysDiff <= 30:
-		return 200  // 1月内
+		return 200 // 1月内
 	case daysDiff <= 90:
-		return 100  // 3月内
+		return 100 // 3月内
 	case daysDiff <= 365:
-		return 50   // 1年内
+		return 50 // 1年内
 	default:
-		return 20   // 1年以上
+		return 20 // 1年以上
 	}
 }
-
-

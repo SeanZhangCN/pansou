@@ -7,23 +7,34 @@ import (
 )
 
 // 通用网盘链接匹配正则表达式 - 修改为更精确的匹配模式
-var AllPanLinksPattern = regexp.MustCompile(`(?i)(?:(?:magnet:\?xt=urn:btih:[a-zA-Z0-9]+)|(?:ed2k://\|file\|[^|]+\|\d+\|[A-Fa-f0-9]+\|/?)|(?:https?://(?:(?:[\w.-]+\.)?(?:pan\.(?:baidu|quark)\.cn|(?:www\.)?(?:alipan|aliyundrive)\.com|drive\.uc\.cn|cloud\.189\.cn|caiyun\.139\.com|(?:www\.)?123(?:684|685|912|pan|592)\.(?:com|cn)|115\.com|115cdn\.com|anxia\.com|pan\.xunlei\.com|mypikpak\.com))(?:/[^\s'"<>()]*)?))`)
+var AllPanLinksPattern = regexp.MustCompile(`(?i)(?:(?:magnet:\?xt=urn:btih:[a-zA-Z0-9]+)|(?:ed2k://\|file\|[^|]+\|\d+\|[A-Fa-f0-9]+\|/?)|(?:https?://(?:(?:[\w.-]+\.)?(?:pan\.(?:baidu|quark)\.cn|(?:www\.)?(?:alipan|aliyundrive)\.com|drive\.uc\.cn|cloud\.189\.cn|(?:www\.)?(?:yun|caiyun)\.139\.com|caiyun\.feixin\.10086\.cn|(?:www\.)?123(?:684|685|912|pan|592)\.(?:com|cn)|115\.com|115cdn\.com|anxia\.com|pan\.xunlei\.com|mypikpak\.com|guangyapan\.com))(?:/[^\s'"<>()]*)?))`)
 
 // 单独定义各种网盘的链接匹配模式，以便更精确地提取
 // 修改百度网盘链接正则表达式，确保只匹配到链接本身，不包含后面的文本
 var BaiduPanPattern = regexp.MustCompile(`https?://pan\.baidu\.com/s/[a-zA-Z0-9_-]+(?:\?pwd=[a-zA-Z0-9]{4})?`)
 var QuarkPanPattern = regexp.MustCompile(`https?://pan\.quark\.cn/s/[a-zA-Z0-9]+`)
 var XunleiPanPattern = regexp.MustCompile(`https?://pan\.xunlei\.com/s/[a-zA-Z0-9]+(?:\?pwd=[a-zA-Z0-9]{4})?(?:#)?`)
+
 // 添加天翼云盘链接正则表达式 - 精确匹配，支持URL编码的访问码
 var TianyiPanPattern = regexp.MustCompile(`https?://cloud\.189\.cn/t/[a-zA-Z0-9]+(?:%[0-9A-Fa-f]{2})*(?:（[^）]*）)?`)
+
 // 添加UC网盘链接正则表达式
 var UCPanPattern = regexp.MustCompile(`https?://drive\.uc\.cn/s/[a-zA-Z0-9]+(?:\?public=\d)?`)
+
 // 添加123网盘链接正则表达式
 var Pan123Pattern = regexp.MustCompile(`https?://(?:www\.)?123(?:684|865|685|912|pan|592)\.(?:com|cn)/s/[a-zA-Z0-9_-]+(?:\?(?:%E6%8F%90%E5%8F%96%E7%A0%81|提取码)[:：][a-zA-Z0-9]+)?`)
+
 // 添加115网盘链接正则表达式
 var Pan115Pattern = regexp.MustCompile(`https?://(?:115\.com|115cdn\.com|anxia\.com)/s/[a-zA-Z0-9]+(?:\?password=[a-zA-Z0-9]{4})?(?:#)?`)
+
 // 添加阿里云盘链接正则表达式
 var AliyunPanPattern = regexp.MustCompile(`https?://(?:www\.)?(?:alipan|aliyundrive)\.com/s/[a-zA-Z0-9]+`)
+
+// 添加光鸭云盘链接正则表达式
+var GuangyaPanPattern = regexp.MustCompile(`https?://(?:www\.)?guangyapan\.com/s/[a-zA-Z0-9_-]+`)
+
+// 添加移动云盘链接正则表达式，兼容 yun.139.com/shareweb/#/w/i/... 与 caiyun.139.com 常见分享格式
+var MobilePanPattern = regexp.MustCompile(`https?://(?:(?:www\.)?yun\.139\.com/shareweb/#/w/i/[a-zA-Z0-9]+|(?:www\.)?caiyun\.139\.com/(?:w/i/[a-zA-Z0-9]+|m/i\?[a-zA-Z0-9]+)[^\s<>"']*|caiyun\.feixin\.10086\.cn/[a-zA-Z0-9]+)`)
 
 // 提取码匹配正则表达式 - 增强提取密码的能力
 var PasswordPattern = regexp.MustCompile(`(?i)(?:(?:提取|访问|提取密|密)码|pwd)[：:]\s*([a-zA-Z0-9]{4})(?:[^a-zA-Z0-9]|$)`)
@@ -35,7 +46,7 @@ var BaiduPasswordPattern = regexp.MustCompile(`(?i)(?:链接：.*?提取码：|�
 // GetLinkType 获取链接类型
 func GetLinkType(url string) string {
 	url = strings.ToLower(url)
-	
+
 	// 处理可能带有"链接："前缀的情况
 	if strings.Contains(url, "链接：") || strings.Contains(url, "链接:") {
 		url = strings.Split(url, "链接")[1]
@@ -44,16 +55,16 @@ func GetLinkType(url string) string {
 		}
 		url = strings.TrimSpace(url)
 	}
-	
+
 	// 根据关键词判断ed2k链接
 	if strings.Contains(url, "ed2k:") {
 		return "ed2k"
 	}
-	
+
 	if strings.HasPrefix(url, "magnet:") {
 		return "magnet"
 	}
-	
+
 	if strings.Contains(url, "pan.baidu.com") {
 		return "baidu"
 	}
@@ -63,13 +74,16 @@ func GetLinkType(url string) string {
 	if strings.Contains(url, "alipan.com") || strings.Contains(url, "aliyundrive.com") {
 		return "aliyun"
 	}
+	if strings.Contains(url, "guangyapan.com") {
+		return "guangya"
+	}
 	if strings.Contains(url, "cloud.189.cn") {
 		return "tianyi"
 	}
 	if strings.Contains(url, "drive.uc.cn") {
 		return "uc"
 	}
-	if strings.Contains(url, "caiyun.139.com") {
+	if strings.Contains(url, "caiyun.139.com") || strings.Contains(url, "yun.139.com") || strings.Contains(url, "caiyun.feixin.10086.cn") {
 		return "mobile"
 	}
 	if strings.Contains(url, "115.com") || strings.Contains(url, "115cdn.com") || strings.Contains(url, "anxia.com") {
@@ -81,14 +95,14 @@ func GetLinkType(url string) string {
 	if strings.Contains(url, "pan.xunlei.com") {
 		return "xunlei"
 	}
-	
+
 	// 123网盘有多个域名
-	if strings.Contains(url, "123684.com") || strings.Contains(url, "123685.com") || strings.Contains(url, "123865.com") || 
-	   strings.Contains(url, "123912.com") || strings.Contains(url, "123pan.com") || 
-	   strings.Contains(url, "123pan.cn") || strings.Contains(url, "123592.com") {
+	if strings.Contains(url, "123684.com") || strings.Contains(url, "123685.com") || strings.Contains(url, "123865.com") ||
+		strings.Contains(url, "123912.com") || strings.Contains(url, "123pan.com") ||
+		strings.Contains(url, "123pan.cn") || strings.Contains(url, "123592.com") {
 		return "123"
 	}
-	
+
 	return "others"
 }
 
@@ -101,23 +115,23 @@ func CleanBaiduPanURL(url string) string {
 		if startIdx >= 0 {
 			// 从起始位置开始提取
 			url = url[startIdx:]
-			
+
 			// 查找可能的结束标记
 			endMarkers := []string{" ", "\n", "\t", "，", "。", "；", ";", "，", ",", "?pwd="}
 			minEndIdx := len(url)
-			
+
 			for _, marker := range endMarkers {
 				idx := strings.Index(url, marker)
 				if idx > 0 && idx < minEndIdx {
 					minEndIdx = idx
 				}
 			}
-			
+
 			// 如果找到了结束标记，截取到结束标记位置
 			if minEndIdx < len(url) {
 				url = url[:minEndIdx]
 			}
-			
+
 			// 特殊处理pwd参数，确保只保留4位密码
 			if strings.Contains(url, "?pwd=") {
 				pwdIdx := strings.Index(url, "?pwd=")
@@ -145,23 +159,23 @@ func CleanTianyiPanURL(url string) string {
 		if startIdx >= 0 {
 			// 从起始位置开始提取
 			url = url[startIdx:]
-			
+
 			// 查找可能的结束标记
 			endMarkers := []string{" ", "\n", "\t", "，", "。", "；", ";", "，", ",", "实时", "天翼", "更多"}
 			minEndIdx := len(url)
-			
+
 			for _, marker := range endMarkers {
 				idx := strings.Index(url, marker)
 				if idx > 0 && idx < minEndIdx {
 					minEndIdx = idx
 				}
 			}
-			
+
 			// 如果找到了结束标记，截取到结束标记位置
 			if minEndIdx < len(url) {
 				url = url[:minEndIdx]
 			}
-			
+
 			// 标准化URL：将URL编码转换为中文，用于去重
 			if decoded, err := netUrl.QueryUnescape(url); err == nil {
 				url = decoded
@@ -180,23 +194,25 @@ func CleanUCPanURL(url string) string {
 		if startIdx >= 0 {
 			// 从起始位置开始提取
 			url = url[startIdx:]
-			
+
 			// 查找可能的结束标记（包括常见的网盘名称，可能出现在链接后面）
-			endMarkers := []string{" ", "\n", "\t", "，", "。", "；", ";", "，", ",", "网盘", "123", "夸克", "阿里", "百度"}
+			// URL href 本身通常已经是完整链接，不能把分享码中合法的
+			// "123" 当作后续文本分隔符（例如 /s/abc123）。
+			endMarkers := []string{" ", "\n", "\t", "，", "。", "；", ";", "，", ",", "网盘", "夸克", "阿里", "百度"}
 			minEndIdx := len(url)
-			
+
 			for _, marker := range endMarkers {
 				idx := strings.Index(url, marker)
 				if idx > 0 && idx < minEndIdx {
 					minEndIdx = idx
 				}
 			}
-			
+
 			// 如果找到了结束标记，截取到结束标记位置
 			if minEndIdx < len(url) {
 				return url[:minEndIdx]
 			}
-			
+
 			// 处理public参数
 			if strings.Contains(url, "?public=") {
 				publicIdx := strings.Index(url, "?public=")
@@ -216,20 +232,20 @@ func CleanUCPanURL(url string) string {
 // Clean123PanURL 清理123网盘URL，确保链接格式正确
 func Clean123PanURL(url string) string {
 	// 检查是否为123网盘链接
-	domains := []string{"123684.com", "123685.com","123865.com", "123912.com", "123pan.com", "123pan.cn", "123592.com"}
+	domains := []string{"123684.com", "123685.com", "123865.com", "123912.com", "123pan.com", "123pan.cn", "123592.com"}
 	isDomain123 := false
-	
+
 	for _, domain := range domains {
 		if strings.Contains(url, domain+"/s/") {
 			isDomain123 = true
 			break
 		}
 	}
-	
+
 	if isDomain123 {
 		// 确保链接有协议头
 		hasProtocol := strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://")
-		
+
 		// 找到链接的起始位置
 		startIdx := -1
 		for _, domain := range domains {
@@ -238,7 +254,7 @@ func Clean123PanURL(url string) string {
 				break
 			}
 		}
-		
+
 		if startIdx >= 0 {
 			// 如果链接没有协议头，添加协议头
 			if !hasProtocol {
@@ -254,25 +270,25 @@ func Clean123PanURL(url string) string {
 					url = protocol + url[startIdx:]
 				}
 			}
-			
+
 			// 保留提取码参数，但需要处理可能的表情符号和其他无关文本
 			// 查找可能的结束标记（表情符号、标签标识等）
 			// 注意：我们不再将"提取码"作为结束标记，因为它是URL的一部分
 			endMarkers := []string{" ", "\n", "\t", "，", "。", "；", ";", "，", ",", "📁", "🔍", "标签", "🏷", "📎", "🔗", "📌", "📋", "📂", "🗂️", "🔖", "📚", "📒", "📔", "📕", "📓", "📗", "📘", "📙", "📄", "📃", "📑", "🧾", "📊", "📈", "📉", "🗒️", "🗓️", "📆", "📅", "🗑️", "🔒", "🔓", "🔏", "🔐", "🔑", "🗝️"}
 			minEndIdx := len(url)
-			
+
 			for _, marker := range endMarkers {
 				idx := strings.Index(url, marker)
 				if idx > 0 && idx < minEndIdx {
 					minEndIdx = idx
 				}
 			}
-			
+
 			// 如果找到了结束标记，截取到结束标记位置
 			if minEndIdx < len(url) {
 				return url[:minEndIdx]
 			}
-			
+
 			// 标准化URL编码的提取码，统一使用非编码形式
 			if strings.Contains(url, "%E6%8F%90%E5%8F%96%E7%A0%81") {
 				url = strings.Replace(url, "%E6%8F%90%E5%8F%96%E7%A0%81", "提取码", 1)
@@ -295,11 +311,11 @@ func Clean115PanURL(url string) string {
 		} else if idx := strings.Index(url, "anxia.com/s/"); idx >= 0 {
 			startIdx = idx
 		}
-		
+
 		if startIdx >= 0 {
 			// 确保链接有协议头
 			hasProtocol := strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://")
-			
+
 			// 如果链接没有协议头，添加协议头
 			if !hasProtocol {
 				// 提取链接部分
@@ -314,7 +330,7 @@ func Clean115PanURL(url string) string {
 					url = protocol + url[startIdx:]
 				}
 			}
-			
+
 			// 如果链接包含password参数，确保只保留到password=xxxx部分（4位密码）
 			if strings.Contains(url, "?password=") {
 				pwdIdx := strings.Index(url, "?password=")
@@ -324,7 +340,7 @@ func Clean115PanURL(url string) string {
 					return url
 				}
 			}
-			
+
 			// 如果链接包含#，截取到#位置
 			hashIdx := strings.Index(url, "#")
 			if hashIdx > 0 {
@@ -342,7 +358,7 @@ func CleanAliyunPanURL(url string) string {
 	if strings.Contains(url, "alipan.com/s/") || strings.Contains(url, "aliyundrive.com/s/") {
 		// 找到链接的起始位置和域名部分
 		startIdx := -1
-		
+
 		if idx := strings.Index(url, "www.alipan.com/s/"); idx >= 0 {
 			startIdx = idx
 		} else if idx := strings.Index(url, "alipan.com/s/"); idx >= 0 {
@@ -352,11 +368,11 @@ func CleanAliyunPanURL(url string) string {
 		} else if idx := strings.Index(url, "aliyundrive.com/s/"); idx >= 0 {
 			startIdx = idx
 		}
-		
+
 		if startIdx >= 0 {
 			// 确保链接有协议头
 			hasProtocol := strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://")
-			
+
 			// 如果链接没有协议头，添加协议头
 			if !hasProtocol {
 				// 提取链接部分
@@ -371,18 +387,18 @@ func CleanAliyunPanURL(url string) string {
 					url = protocol + url[startIdx:]
 				}
 			}
-			
+
 			// 查找可能的结束标记（表情符号、标签标识等）
 			endMarkers := []string{" ", "\n", "\t", "，", "。", "；", ";", "，", ",", "📁", "🔍", "标签", "🏷", "📎", "🔗", "📌", "📋", "📂", "🗂️", "🔖", "📚", "📒", "📔", "📕", "📓", "📗", "📘", "📙", "📄", "📃", "📑", "🧾", "📊", "📈", "📉", "🗒️", "🗓️", "📆", "📅", "🗑️", "🔒", "🔓", "🔏", "🔐", "🔑", "🗝️"}
 			minEndIdx := len(url)
-			
+
 			for _, marker := range endMarkers {
 				idx := strings.Index(url, marker)
 				if idx > 0 && idx < minEndIdx {
 					minEndIdx = idx
 				}
 			}
-			
+
 			// 如果找到了结束标记，截取到结束标记位置
 			if minEndIdx < len(url) {
 				return url[:minEndIdx]
@@ -392,11 +408,58 @@ func CleanAliyunPanURL(url string) string {
 	return url
 }
 
+// CleanMobilePanURL 清理移动云盘URL，确保链接格式正确
+func CleanMobilePanURL(url string) string {
+	patterns := []string{
+		"https://yun.139.com/shareweb/#/w/i/",
+		"http://yun.139.com/shareweb/#/w/i/",
+		"https://www.yun.139.com/shareweb/#/w/i/",
+		"http://www.yun.139.com/shareweb/#/w/i/",
+		"https://caiyun.139.com/w/i/",
+		"http://caiyun.139.com/w/i/",
+		"https://www.caiyun.139.com/w/i/",
+		"http://www.caiyun.139.com/w/i/",
+		"https://caiyun.139.com/m/i?",
+		"http://caiyun.139.com/m/i?",
+		"https://www.caiyun.139.com/m/i?",
+		"http://www.caiyun.139.com/m/i?",
+		"https://caiyun.feixin.10086.cn/",
+		"http://caiyun.feixin.10086.cn/",
+	}
+
+	startIdx := -1
+	for _, prefix := range patterns {
+		if idx := strings.Index(url, prefix); idx >= 0 {
+			startIdx = idx
+			break
+		}
+	}
+
+	if startIdx < 0 {
+		return url
+	}
+
+	url = url[startIdx:]
+
+	endMarkers := []string{" ", "\n", "\t", "，", "。", "；", ";", ",", "访问码", "提取码", "密码", "链接", "网盘"}
+	minEndIdx := len(url)
+	for _, marker := range endMarkers {
+		if idx := strings.Index(url, marker); idx > 0 && idx < minEndIdx {
+			minEndIdx = idx
+		}
+	}
+	if minEndIdx < len(url) {
+		url = url[:minEndIdx]
+	}
+
+	return strings.TrimSpace(url)
+}
+
 // normalizeAliyunPanURL 标准化阿里云盘URL，确保链接格式正确
 func normalizeAliyunPanURL(url string, password string) string {
 	// 清理URL，确保获取正确的链接部分
 	url = CleanAliyunPanURL(url)
-	
+
 	// 阿里云盘链接通常不在URL中包含密码参数
 	// 但是我们确保返回的是干净的链接
 	return url
@@ -413,7 +476,7 @@ func ExtractPassword(content, url string) string {
 			return tianyiMatches[1]
 		}
 	}
-	
+
 	// 特殊处理迅雷网盘URL中的pwd参数
 	if strings.Contains(url, "pan.xunlei.com") && strings.Contains(url, "?pwd=") {
 		pwdPattern := regexp.MustCompile(`\?pwd=([a-zA-Z0-9]{4})`)
@@ -422,19 +485,19 @@ func ExtractPassword(content, url string) string {
 			return pwdMatches[1]
 		}
 	}
-	
+
 	// 先从URL中提取密码
 	matches := UrlPasswordPattern.FindStringSubmatch(url)
 	if len(matches) > 1 {
 		return matches[1]
 	}
-	
+
 	// 特殊处理115网盘URL中的密码
-	if (strings.Contains(url, "115.com") || 
-		strings.Contains(url, "115cdn.com") || 
-		strings.Contains(url, "anxia.com")) && 
+	if (strings.Contains(url, "115.com") ||
+		strings.Contains(url, "115cdn.com") ||
+		strings.Contains(url, "anxia.com")) &&
 		strings.Contains(url, "password=") {
-		
+
 		// 尝试从URL中提取密码
 		passwordPattern := regexp.MustCompile(`password=([a-zA-Z0-9]{4})`)
 		passwordMatches := passwordPattern.FindStringSubmatch(url)
@@ -442,17 +505,17 @@ func ExtractPassword(content, url string) string {
 			return passwordMatches[1]
 		}
 	}
-	
+
 	// 特殊处理123网盘URL中的提取码
-	if (strings.Contains(url, "123684.com") || 
-		strings.Contains(url, "123685.com") || 
-		strings.Contains(url, "123865.com") || 
-		strings.Contains(url, "123912.com") || 
-		strings.Contains(url, "123pan.com") || 
-		strings.Contains(url, "123pan.cn") || 
-		strings.Contains(url, "123592.com")) && 
+	if (strings.Contains(url, "123684.com") ||
+		strings.Contains(url, "123685.com") ||
+		strings.Contains(url, "123865.com") ||
+		strings.Contains(url, "123912.com") ||
+		strings.Contains(url, "123pan.com") ||
+		strings.Contains(url, "123pan.cn") ||
+		strings.Contains(url, "123592.com")) &&
 		(strings.Contains(url, "提取码") || strings.Contains(url, "%E6%8F%90%E5%8F%96%E7%A0%81")) {
-		
+
 		// 尝试从URL中提取提取码（处理普通文本和URL编码两种情况）
 		extractCodePattern := regexp.MustCompile(`(?:提取码|%E6%8F%90%E5%8F%96%E7%A0%81)[:：]([a-zA-Z0-9]+)`)
 		codeMatches := extractCodePattern.FindStringSubmatch(url)
@@ -460,17 +523,17 @@ func ExtractPassword(content, url string) string {
 			return codeMatches[1]
 		}
 	}
-	
+
 	// 检查123网盘URL中的提取码参数
-	if (strings.Contains(url, "123684.com") || 
-		strings.Contains(url, "123685.com") || 
-		strings.Contains(url, "123865.com") || 
-		strings.Contains(url, "123912.com") || 
-		strings.Contains(url, "123pan.com") || 
-		strings.Contains(url, "123pan.cn") || 
-		strings.Contains(url, "123592.com")) && 
+	if (strings.Contains(url, "123684.com") ||
+		strings.Contains(url, "123685.com") ||
+		strings.Contains(url, "123865.com") ||
+		strings.Contains(url, "123912.com") ||
+		strings.Contains(url, "123pan.com") ||
+		strings.Contains(url, "123pan.cn") ||
+		strings.Contains(url, "123592.com")) &&
 		strings.Contains(url, "提取码") {
-		
+
 		// 尝试从URL中提取提取码
 		parts := strings.Split(url, "提取码")
 		if len(parts) > 1 {
@@ -479,17 +542,17 @@ func ExtractPassword(content, url string) string {
 			if codeStart >= 0 && codeStart+1 < len(parts[1]) {
 				// 提取冒号后面的内容，去除空格
 				code := strings.TrimSpace(parts[1][codeStart+1:])
-				
+
 				// 如果提取码后面有其他字符（如表情符号、标签等），只取提取码部分
 				// 增加更多可能的结束标记
 				endIdx := strings.IndexAny(code, " \t\n\r，。；;,🏷📁🔍📎🔗📌📋📂🗂️🔖📚📒📔📕📓📗📘📙📄📃📑🧾📊📈📉🗒️🗓️📆��🗑️🔒🔓🔏🔐🔑🗝️")
 				if endIdx > 0 {
 					code = code[:endIdx]
 				}
-				
+
 				// 去除可能的空格和其他无关字符
 				code = strings.TrimSpace(code)
-				
+
 				// 确保提取码是有效的（通常是4位字母数字）
 				if len(code) > 0 && len(code) <= 6 && isValidPassword(code) {
 					return code
@@ -497,7 +560,7 @@ func ExtractPassword(content, url string) string {
 			}
 		}
 	}
-	
+
 	// 检查内容中是否包含"提取码"字样
 	if strings.Contains(content, "提取码") {
 		// 尝试从内容中提取提取码
@@ -509,7 +572,7 @@ func ExtractPassword(content, url string) string {
 				if codeStart >= 0 && codeStart+1 < len(part) {
 					// 提取冒号后面的内容，去除空格
 					code := strings.TrimSpace(part[codeStart+1:])
-					
+
 					// 如果提取码后面有其他字符，只取提取码部分
 					endIdx := strings.IndexAny(code, " \t\n\r，。；;,🏷📁🔍📎🔗📌📋📂🗂️🔖📚📒📔📕📓📗📘📙📄📃📑🧾📊📈📉🗒️🗓️📆📅🗑️🔒🔓🔏🔐🔑🗝️")
 					if endIdx > 0 {
@@ -530,10 +593,10 @@ func ExtractPassword(content, url string) string {
 							}
 						}
 					}
-					
+
 					// 去除可能的空格和其他无关字符
 					code = strings.TrimSpace(code)
-					
+
 					// 如果提取码不为空且是有效的，返回
 					if code != "" && isValidPassword(code) {
 						return code
@@ -542,7 +605,7 @@ func ExtractPassword(content, url string) string {
 			}
 		}
 	}
-	
+
 	// 再从内容中提取密码
 	// 对于百度网盘链接，尝试查找特定格式的密码
 	if strings.Contains(strings.ToLower(url), "pan.baidu.com") {
@@ -552,13 +615,13 @@ func ExtractPassword(content, url string) string {
 			return baiduMatches[1]
 		}
 	}
-	
+
 	// 通用密码提取
 	matches = PasswordPattern.FindStringSubmatch(content)
 	if len(matches) > 1 {
 		return matches[1]
 	}
-	
+
 	return ""
 }
 
@@ -575,7 +638,7 @@ func isValidPassword(password string) bool {
 // ExtractNetDiskLinks 从文本中提取所有网盘链接
 func ExtractNetDiskLinks(text string) []string {
 	var links []string
-	
+
 	// 提取百度网盘链接
 	baiduMatches := BaiduPanPattern.FindAllString(text, -1)
 	for _, match := range baiduMatches {
@@ -589,7 +652,7 @@ func ExtractNetDiskLinks(text string) []string {
 			links = append(links, cleanURL)
 		}
 	}
-	
+
 	// 提取天翼云盘链接
 	tianyiMatches := TianyiPanPattern.FindAllString(text, -1)
 	for _, match := range tianyiMatches {
@@ -603,7 +666,7 @@ func ExtractNetDiskLinks(text string) []string {
 			links = append(links, cleanURL)
 		}
 	}
-	
+
 	// 提取UC网盘链接
 	ucMatches := UCPanPattern.FindAllString(text, -1)
 	for _, match := range ucMatches {
@@ -617,7 +680,7 @@ func ExtractNetDiskLinks(text string) []string {
 			links = append(links, cleanURL)
 		}
 	}
-	
+
 	// 提取123网盘链接
 	pan123Matches := Pan123Pattern.FindAllString(text, -1)
 	for _, match := range pan123Matches {
@@ -634,19 +697,19 @@ func ExtractNetDiskLinks(text string) []string {
 				// 标准化链接以进行比较（仅移除协议）
 				normalizedExisting := normalizeURLForComparison(existingLink)
 				normalizedNew := normalizeURLForComparison(cleanURL)
-				
+
 				if normalizedExisting == normalizedNew {
 					isDuplicate = true
 					break
 				}
 			}
-			
+
 			if !isDuplicate {
 				links = append(links, cleanURL)
 			}
 		}
 	}
-	
+
 	// 提取115网盘链接
 	pan115Matches := Pan115Pattern.FindAllString(text, -1)
 	for _, match := range pan115Matches {
@@ -662,19 +725,19 @@ func ExtractNetDiskLinks(text string) []string {
 			for _, existingLink := range links {
 				normalizedExisting := normalizeURLForComparison(existingLink)
 				normalizedNew := normalizeURLForComparison(cleanURL)
-				
+
 				if normalizedExisting == normalizedNew {
 					isDuplicate = true
 					break
 				}
 			}
-			
+
 			if !isDuplicate {
 				links = append(links, cleanURL)
 			}
 		}
 	}
-	
+
 	// 提取阿里云盘链接
 	aliyunMatches := AliyunPanPattern.FindAllString(text, -1)
 	if aliyunMatches != nil {
@@ -691,20 +754,74 @@ func ExtractNetDiskLinks(text string) []string {
 				for _, existingLink := range links {
 					normalizedExisting := normalizeURLForComparison(existingLink)
 					normalizedNew := normalizeURLForComparison(cleanURL)
-					
+
 					if normalizedExisting == normalizedNew {
 						isDuplicate = true
 						break
 					}
 				}
-				
+
 				if !isDuplicate {
 					links = append(links, cleanURL)
 				}
 			}
 		}
 	}
-	
+
+	// 提取光鸭云盘链接
+	guangyaMatches := GuangyaPanPattern.FindAllString(text, -1)
+	if guangyaMatches != nil {
+		for _, match := range guangyaMatches {
+			cleanURL := strings.TrimSpace(match)
+			if strings.HasSuffix(cleanURL, "https") {
+				cleanURL = cleanURL[:len(cleanURL)-5]
+			}
+			if cleanURL != "" {
+				isDuplicate := false
+				for _, existingLink := range links {
+					normalizedExisting := normalizeURLForComparison(existingLink)
+					normalizedNew := normalizeURLForComparison(cleanURL)
+
+					if normalizedExisting == normalizedNew {
+						isDuplicate = true
+						break
+					}
+				}
+
+				if !isDuplicate {
+					links = append(links, cleanURL)
+				}
+			}
+		}
+	}
+
+	// 提取移动云盘链接
+	mobileMatches := MobilePanPattern.FindAllString(text, -1)
+	if mobileMatches != nil {
+		for _, match := range mobileMatches {
+			cleanURL := CleanMobilePanURL(match)
+			if strings.HasSuffix(cleanURL, "https") {
+				cleanURL = cleanURL[:len(cleanURL)-5]
+			}
+			if cleanURL != "" {
+				isDuplicate := false
+				for _, existingLink := range links {
+					normalizedExisting := normalizeURLForComparison(existingLink)
+					normalizedNew := normalizeURLForComparison(cleanURL)
+
+					if normalizedExisting == normalizedNew {
+						isDuplicate = true
+						break
+					}
+				}
+
+				if !isDuplicate {
+					links = append(links, cleanURL)
+				}
+			}
+		}
+	}
+
 	// 提取夸克网盘链接
 	quarkLinks := QuarkPanPattern.FindAllString(text, -1)
 	if quarkLinks != nil {
@@ -722,13 +839,13 @@ func ExtractNetDiskLinks(text string) []string {
 					break
 				}
 			}
-			
+
 			if !isDuplicate {
 				links = append(links, cleanURL)
 			}
 		}
 	}
-	
+
 	// 提取迅雷网盘链接
 	xunleiLinks := XunleiPanPattern.FindAllString(text, -1)
 	if xunleiLinks != nil {
@@ -746,13 +863,13 @@ func ExtractNetDiskLinks(text string) []string {
 					break
 				}
 			}
-			
+
 			if !isDuplicate {
 				links = append(links, cleanURL)
 			}
 		}
 	}
-	
+
 	// 使用通用模式提取其他可能的链接
 	otherLinks := AllPanLinksPattern.FindAllString(text, -1)
 	if otherLinks != nil {
@@ -764,41 +881,45 @@ func ExtractNetDiskLinks(text string) []string {
 				cleanURL = cleanURL[:len(cleanURL)-5]
 			}
 			// 跳过百度、夸克、迅雷、天翼、UC和123网盘链接，因为已经单独处理过
-			if strings.Contains(cleanURL, "pan.baidu.com") || 
-			   strings.Contains(cleanURL, "pan.quark.cn") || 
-			   strings.Contains(cleanURL, "pan.xunlei.com") ||
-			   strings.Contains(cleanURL, "cloud.189.cn") ||
-			   strings.Contains(cleanURL, "drive.uc.cn") ||
-			   strings.Contains(cleanURL, "123684.com") ||
-			   strings.Contains(cleanURL, "123685.com") ||
-			   strings.Contains(cleanURL, "123865.com") ||
-			   strings.Contains(cleanURL, "123912.com") ||
-			   strings.Contains(cleanURL, "123pan.com") ||
-			   strings.Contains(cleanURL, "123pan.cn") ||
-			   strings.Contains(cleanURL, "123592.com") {
+			if strings.Contains(cleanURL, "pan.baidu.com") ||
+				strings.Contains(cleanURL, "pan.quark.cn") ||
+				strings.Contains(cleanURL, "pan.xunlei.com") ||
+				strings.Contains(cleanURL, "guangyapan.com") ||
+				strings.Contains(cleanURL, "cloud.189.cn") ||
+				strings.Contains(cleanURL, "drive.uc.cn") ||
+				strings.Contains(cleanURL, "yun.139.com") ||
+				strings.Contains(cleanURL, "caiyun.139.com") ||
+				strings.Contains(cleanURL, "caiyun.feixin.10086.cn") ||
+				strings.Contains(cleanURL, "123684.com") ||
+				strings.Contains(cleanURL, "123685.com") ||
+				strings.Contains(cleanURL, "123865.com") ||
+				strings.Contains(cleanURL, "123912.com") ||
+				strings.Contains(cleanURL, "123pan.com") ||
+				strings.Contains(cleanURL, "123pan.cn") ||
+				strings.Contains(cleanURL, "123592.com") {
 				continue
 			}
-			
+
 			isDuplicate := false
 			for _, existingLink := range links {
 				normalizedExisting := normalizeURLForComparison(existingLink)
 				normalizedNew := normalizeURLForComparison(cleanURL)
-				
+
 				// 使用完整URL比较，包括www.前缀
-				if normalizedExisting == normalizedNew || 
-				   strings.Contains(normalizedExisting, normalizedNew) || 
-				   strings.Contains(normalizedNew, normalizedExisting) {
+				if normalizedExisting == normalizedNew ||
+					strings.Contains(normalizedExisting, normalizedNew) ||
+					strings.Contains(normalizedNew, normalizedExisting) {
 					isDuplicate = true
 					break
 				}
 			}
-			
+
 			if !isDuplicate {
 				links = append(links, cleanURL)
 			}
 		}
 	}
-	
+
 	return links
 }
 
@@ -809,11 +930,11 @@ func normalizeURLForComparison(url string) string {
 	if idx := strings.Index(url, "://"); idx >= 0 {
 		url = url[idx+3:]
 	}
-	
+
 	// 标准化URL编码的提取码，统一使用非编码形式
 	if strings.Contains(url, "%E6%8F%90%E5%8F%96%E7%A0%81") {
 		url = strings.Replace(url, "%E6%8F%90%E5%8F%96%E7%A0%81", "提取码", 1)
 	}
-	
+
 	return url
-} 
+}

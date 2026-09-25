@@ -39,6 +39,7 @@ func SetupRouter(searchService *service.SearchService) *gin.Engine {
 		// 搜索接口 - 支持POST和GET两种方式
 		api.POST("/search", SearchHandler)
 		api.GET("/search", SearchHandler) // 添加GET方式支持
+		api.POST("/check/links", CheckHandler)
 		
 		// 健康检查接口
 		api.GET("/health", func(c *gin.Context) {

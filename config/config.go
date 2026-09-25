@@ -122,7 +122,7 @@ func Init() {
 func getDefaultChannels() []string {
 	channelsEnv := os.Getenv("CHANNELS")
 	if channelsEnv == "" {
-		return []string{"tgsearchers4"}
+		return []string{"tgsearchers6"}
 	}
 	return strings.Split(channelsEnv, ",")
 }
@@ -201,7 +201,20 @@ func getPort() string {
 }
 
 func getProxyURL() string {
-	return os.Getenv("PROXY")
+	// PROXY 是项目专用的统一代理配置。未设置时，兼容常见的
+	// HTTPS_PROXY/HTTP_PROXY/ALL_PROXY 环境变量，这样 Telegram 的
+	// HTTPS 请求不会因为只配置了标准代理变量而退回直连。
+	for _, name := range []string{
+		"PROXY",
+		"HTTPS_PROXY", "https_proxy",
+		"HTTP_PROXY", "http_proxy",
+		"ALL_PROXY", "all_proxy",
+	} {
+		if proxyURL := strings.TrimSpace(os.Getenv(name)); proxyURL != "" {
+			return proxyURL
+		}
+	}
+	return ""
 }
 
 func getHTTPProxyURL() string {

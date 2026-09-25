@@ -520,8 +520,8 @@ Cookie保持活跃状态 ✅
 **性能提升**：
 ```
 首次保存频道:
-  pd97631607 → 访问 https://pd.qq.com/g/pd97631607
-              → 提取 guild_id: 592843764045681811
+  pd97631607 → 使用登录Cookie调用官网频道解析API
+              → 获取数字 guild_id: 592843764045681811
               → 缓存到JSON
 
 搜索时:
@@ -534,6 +534,26 @@ Cookie保持活跃状态 ✅
 - 首次配置：稍慢（需要获取guild_id）
 - 后续搜索：极快（从内存读取）
 - 性能提升：每个频道节省100-200ms
+
+频道解析使用官网的 `trpc.group_pro.cmd0x907e.Cmd0x907e/HandleProcess` 接口，
+不再依赖可能返回 EdgeOne JavaScript 校验页的 `/g/频道号` 页面，无需浏览器或额外运行时。
+解析需要有效的登录 Cookie；也可以直接配置数字 `guild_id`。
+
+旧版本缓存的非数字 ID 会在加载时忽略，保存频道或首次搜索时自动重新解析并持久化，
+不需要删除账号文件或重新登录。解析失败不会把频道短号当作 ID 缓存，下次搜索会重试。
+
+管理页测试搜索会区分“正常无结果”和“上游接口失败”，显示 HTTP 状态、`retcode` 等错误。
+部分频道失败时保留其他频道的搜索结果，并在响应 `data.warning` 及页面中显示失败原因。
+
+验证命令：
+
+```bash
+go test -race ./plugin/qqpd
+QQPD_LIVE_TEST=1 go test ./plugin/qqpd -run '^TestQQPDLiveSearch$' -count=1 -v
+```
+
+实测默认读取本地 `cache/qqpd_users`，仅在临时目录中保存测试缓存，不修改原账号文件。
+非默认用户目录可通过 `QQPD_LIVE_USERS_DIR` 指定绝对路径。
 
 ### 4. 智能去重
 

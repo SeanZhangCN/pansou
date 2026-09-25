@@ -11,6 +11,10 @@ import (
 	"pansou/plugin"
 )
 
+// tgSearchParserVersion 用于在 Telegram 解析规则变化时主动使旧缓存失效。
+// v2 开始纳入 inline keyboard 按钮中的网盘链接。
+const tgSearchParserVersion = "v2"
+
 // 预计算的哈希值映射
 var (
 	channelHashCache sync.Map // 存储频道列表哈希
@@ -55,7 +59,7 @@ func GenerateTGCacheKey(keyword string, channels []string) string {
 	channelsHash := getChannelsHash(channels)
 	
 	// 生成TG搜索特定的缓存键
-	keyStr := fmt.Sprintf("tg:%s:%s", normalizedKeyword, channelsHash)
+	keyStr := fmt.Sprintf("tg:%s:%s:%s", tgSearchParserVersion, normalizedKeyword, channelsHash)
 	hash := md5.Sum([]byte(keyStr))
 	return hex.EncodeToString(hash[:])
 }
@@ -283,4 +287,4 @@ func GenerateCacheKeyLegacy(query string, filters map[string]string) string {
 	// 计算MD5哈希
 	hash := md5.Sum([]byte(keyStr))
 	return hex.EncodeToString(hash[:])
-} 
+}
