@@ -1,0 +1,12 @@
+appname=pansou
+version=0.1.1
+display_name=PanSou
+desc=影视与网盘资源搜索
+platform=arm
+source=thirdparty
+maintainer=fish2018
+distributor=local
+desktop_uidir=ui
+desktop_applaunchname=pansou.main
+os_min_version=1.1.3100
+ctl_stop=true

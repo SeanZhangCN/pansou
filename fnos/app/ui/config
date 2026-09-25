@@ -1,0 +1,14 @@
+{
+  ".url": {
+    "pansou.main": {
+      "title": "PanSou",
+      "icon": "images/icon_{0}.png",
+      "type": "url",
+      "protocol": "",
+      "gatewayPrefix": "/app/pansou",
+      "gatewaySocket": "app.sock",
+      "url": "/app/pansou",
+      "allUsers": true
+    }
+  }
+}

@@ -179,10 +179,14 @@ func startServer() {
 	// 输出服务信息
 	printServiceInfo(port, pluginManager)
 
-	// 创建HTTP服务器
+	// 创建HTTP服务器。fnOS 原生应用可通过 Unix Socket 接入统一网关。
+	handler := http.Handler(router)
+	if frontendDir := os.Getenv("FRONTEND_DIST"); frontendDir != "" {
+		handler = newAppHandler(router, frontendDir, os.Getenv("GATEWAY_PREFIX"))
+	}
 	srv := &http.Server{
 		Addr:         ":" + port,
-		Handler:      router,
+		Handler:      handler,
 		ReadTimeout:  config.AppConfig.HTTPReadTimeout,
 		WriteTimeout: config.AppConfig.HTTPWriteTimeout,
 		IdleTimeout:  config.AppConfig.HTTPIdleTimeout,
@@ -194,26 +198,23 @@ func startServer() {
 
 	// 在单独的goroutine中启动服务器
 	go func() {
-		// 如果设置了最大连接数，使用限制监听器
+		network, address := "tcp", srv.Addr
+		if socketPath := os.Getenv("SOCKET_PATH"); socketPath != "" {
+			network, address = "unix", socketPath
+			if err := os.Remove(socketPath); err != nil && !os.IsNotExist(err) {
+				log.Fatalf("清理旧 Socket 失败: %v", err)
+			}
+		}
+		listener, err := net.Listen(network, address)
+		if err != nil {
+			log.Fatalf("创建监听器失败: %v", err)
+		}
+		defer listener.Close()
 		if config.AppConfig.HTTPMaxConns > 0 {
-			// 创建监听器
-			listener, err := net.Listen("tcp", srv.Addr)
-			if err != nil {
-				log.Fatalf("创建监听器失败: %v", err)
-			}
-
-			// 创建限制连接数的监听器
-			limitListener := netutil.LimitListener(listener, config.AppConfig.HTTPMaxConns)
-
-			// 使用限制监听器启动服务器
-			if err := srv.Serve(limitListener); err != nil && err != http.ErrServerClosed {
-				log.Fatalf("启动服务器失败: %v", err)
-			}
-		} else {
-			// 使用默认方式启动服务器（不限制连接数）
-			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				log.Fatalf("启动服务器失败: %v", err)
-			}
+			listener = netutil.LimitListener(listener, config.AppConfig.HTTPMaxConns)
+		}
+		if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("启动服务器失败: %v", err)
 		}
 	}()
 
